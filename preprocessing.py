@@ -2,38 +2,126 @@ import pandas as pd
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from sklearn.pipeline import Pipeline
 
-def preprocess(df: pd.DataFrame) -> pd.DataFrame:
-    if 'Sex' in df.columns:
-        df['is_female'] = (df.Sex == 'female').astype('int')
-        df = df.drop(columns=['Sex'])
 
-    if 'Embarked' in df.columns:
-        # S, потому что S наибольшее количество в данных
-        df.fillna({'Embarked': 'S'},inplace=True)
+def add_features(input_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Add basic features
+    """
+    df = input_df.copy()
 
-        embarked_dummies = pd.get_dummies(df.Embarked, dtype=float)
+    df["Initial"] = df["Name"].str.extract("([A-Za-z]+)\\.")
 
-        df['Embarked_C'] = embarked_dummies['C']
-        df['Embarked_S'] = embarked_dummies['S']
+    df.replace(
+        {
+            "Initial": {
+                "Mlle": "Miss",
+                "Mme": "Miss",
+                "Ms": "Miss",
+                "Dr": "Mr",
+                "Major": "Mr",
+                "Lady": "Mrs",
+                "Countess": "Mrs",
+                # "Jonkheer": "Other",
+                # "Col": "Other",
+                # "Rev": "Other",
+                "Capt": "Mr",
+                "Sir": "Mr",
+                "Don": "Mr",
+            }
+        },
+        inplace=True,
+    )
 
-        df = df.drop(columns=['Embarked'])
-
-    df = fill_missing_age(df)
-
-    # groups from 0 to 4 for Age (continous Age to categorical Age_group)
-    df['Age_group'] = pd.cut(df['Age'], bins=5, labels=range(0, 5))
+    df.loc[~df["Initial"].isin(["Mr", "Miss", "Mrs"]), "Initial"] = "Other"
 
     # family size
-    df['Family_Size'] = df['Parch'] + df['SibSp']
-    df['Alone'] = 0
-    df.loc[df.Family_Size == 0, 'Alone'] = 1
+    df["Family_Size"] = df["Parch"] + df["SibSp"]
+    # alone - 1 if no family
+    df["Alone"] = 0
+    df.loc[df.Family_Size == 0, "Alone"] = 1
+
+    return df
+
+
+def drop_features(input_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Drop unneeded features
+    """
+    df = input_df.copy()
+
+    # drop name, ticket, cabin, initial because we cannot extract any more info
+    # drop embarked - it was one-hot encoded
+    # drop age and fare because we are using bins instead of continous features
+    df = df.drop(
+        columns=["Name", "Ticket", "Cabin", "Initial", "Embarked", "Age", "Fare"]
+    )
+
+    return df
+
+
+def fill_na(input_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Fill missing values
+    """
+    df = input_df.copy()
+
+    # fill Age using average for Initial
+    mean_ages_by_initials = df.groupby("Initial").Age.mean().round()
+
+    for initial in list(mean_ages_by_initials.keys()):
+        df.loc[(df.Age.isnull()) & (df.Initial == initial), "Age"] = (
+            mean_ages_by_initials[initial]
+        )
+
+    # S because S has biggest occurence
+    df.fillna({"Embarked": "S"}, inplace=True)
+
+    return df
+
+
+def encode_cats(input_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Encode categorical features: Sex, Embarked
+    """
+    df = input_df.copy()
+
+    df.replace({"Sex": {"male": 0, "female": 1}}, inplace=True)
+
+    embarked_dummies = pd.get_dummies(df.Embarked, dtype=float)
+
+    df["Embarked_C"] = embarked_dummies["C"]
+    df["Embarked_S"] = embarked_dummies["S"]
+
+    return df
+
+
+def encode_continuous(input_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Encode continuous features: Sex, Embarked
+    """
+    df = input_df.copy()
+
+    # groups from 0 to 4 for Age (continous Age to categorical Age_group)
+    df["Age_Group"] = pd.cut(df["Age"], bins=5, labels=range(0, 5))
 
     # fare range
-    df['Fare_Range'] = pd.qcut(df['Fare'], 4, labels=range(0, 4))
+    df["Fare_Range"] = pd.qcut(df["Fare"], 4, labels=range(0, 4))
 
-    # drop cols
-    df = df.drop(columns=['Name', 'Ticket', 'Cabin', 'Initial'])
-    
+    return df
+
+
+def preprocess(df: pd.DataFrame) -> pd.DataFrame:
+
+    df = add_features(df)
+
+    df = fill_na(df)
+
+    df = encode_cats(df)
+
+    df = encode_continuous(df)
+
+    df = drop_features(df)
+
     return df
 
 
@@ -41,58 +129,19 @@ def fill_missing_age(input_df: pd.DataFrame) -> pd.DataFrame:
 
     df = input_df.copy()
 
-    if 'Age' in df.columns:
-        for i in df:
-            df['Initial'] = df['Name'].str.extract('([A-Za-z]+)\\.')
-        
-        df.replace({
-            'Initial': {
-                'Mlle': 'Miss',
-                'Mme': 'Miss',
-                'Ms': 'Miss',
-                'Dr': 'Other',
-                'Major': 'Mr',
-                'Lady': 'Mrs',
-                'Countess': 'Mrs',
-                'Jonkheer': 'Other',
-                'Col': 'Other',
-                'Rev': 'Other',
-                'Capt': 'Mr',
-                'Sir': 'Mr',
-                'Don': 'Mr'
-            }},
-            inplace=True
+    mean_ages_by_initials = df.groupby("Initial").Age.mean().round()
+
+    for initial in list(mean_ages_by_initials.keys()):
+        df.loc[(df.Age.isnull()) & (df.Initial == initial), "Age"] = (
+            mean_ages_by_initials[initial]
         )
 
-        mean_ages_by_initials = df.groupby('Initial').Age.mean().round()
-
-        for initial in list(mean_ages_by_initials.keys()):
-            df.loc[
-                (df.Age.isnull()) & (df.Initial == initial),
-                'Age'
-            ] = mean_ages_by_initials[initial]
-
-        assert bool(df.Age.isnull().any()) is False
+    assert bool(df.Age.isnull().any()) is False
 
     return df
 
-def scale(input_df: pd.DataFrame):
-    df = input_df.copy()
 
-    scaler = StandardScaler()
-
-    numeric_cols = ['Age', 'Fare']
-
-    # TODO scale after train/test split
-    df[numeric_cols] = scaler.fit_transform(df[numeric_cols])
-
-    cols_to_minmax_scale = ['Pclass', 'SibSp', 'Parch', 'Family_Size', 'Age_group', 'Fare_Range']
-    mm_scaler = MinMaxScaler()
-    df[cols_to_minmax_scale] = mm_scaler.fit_transform(df[cols_to_minmax_scale])
-
-    return (df, scaler, mm_scaler)
-
-class MyScaler():
+class MyScaler:
     def __init__(self, *, num_cols: list[str], mm_cols: list[str]) -> None:
         self.num_cols = num_cols
         self.mm_cols = mm_cols
@@ -103,15 +152,15 @@ class MyScaler():
     def fit_transform(self, input_df: pd.DataFrame) -> pd.DataFrame:
         df = input_df.copy()
 
-        df[self.num_cols] = self.scaler.fit_transform(df[self.num_cols])
+        # df[self.num_cols] = self.scaler.fit_transform(df[self.num_cols])
         df[self.mm_cols] = self.mm_scaler.fit_transform(df[self.mm_cols])
 
         return df
-    
+
     def transform(self, input_df: pd.DataFrame):
         df = input_df.copy()
 
-        df[self.num_cols] = self.scaler.transform(df[self.num_cols])
+        # df[self.num_cols] = self.scaler.transform(df[self.num_cols])
         df[self.mm_cols] = self.mm_scaler.transform(df[self.mm_cols])
 
         return df
