@@ -8,20 +8,33 @@ from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from sklearn.model_selection import KFold
 from sklearn.metrics import mean_squared_error, accuracy_score
 
-from preprocessing import MyScaler
-from config import config
+from ml_pipeline.preprocessing import MyScaler
+from ml_pipeline.config import config
 
 
 class Linear:
     def __init__(
-        self, df: pd.DataFrame, *, penalty: Literal["l2", "l1"] = "l2"
+        self,
+        df: pd.DataFrame,
+        *,
+        penalty: Literal["l2", "l1", "elastic"] = "l2",
+        elastic_l1_ratio=0.5
     ) -> None:
         self.X = df.drop(columns=["Survived"])
         self.y = df.Survived
 
-        self.model = LogisticRegression(
-            random_state=config.general.seed, penalty=penalty
-        )
+        param_dict = {}
+
+        if penalty == "l2":
+            param_dict["l1_ratio"] = 0
+        elif penalty == "l1":
+            param_dict["l1_ratio"] = 1
+            param_dict["solver"] = "liblinear"
+        elif penalty == "elastic":
+            param_dict["l1_ratio"] = elastic_l1_ratio
+            param_dict["solver"] = "saga"
+
+        self.model = LogisticRegression(random_state=config.general.seed, **param_dict)
 
     def cv(self):
         n_folds = config.split.cv_n_folds
