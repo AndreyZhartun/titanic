@@ -88,7 +88,7 @@ class MLPipeline:
         # )
         # TODO: препроцессоры до CV, которые можно применять до отделения теста
         X_pre = _apply_transformers([], X_train_raw, fit=True)
-        X_test_pre = _apply_transformers([], test_df, fit=False)
+        # X_test_pre = _apply_transformers([], test_df, fit=False)
 
         # print(
         #     f"After pre-CV FE: train shape {X_pre.shape}, test shape {X_test_pre.shape}\n"
