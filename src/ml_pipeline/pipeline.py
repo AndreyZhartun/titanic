@@ -1,14 +1,5 @@
 """
-pipeline.py — Orchestrates the full ML pipeline.
-
-Flow:
-  1. Pre-CV feature engineering  (fit+transform on full train; transform test)
-  2. Cross-validation loop
-       a. Split fold
-       b. In-CV feature engineering  (fit on fold-train; transform fold-val)
-       c. Train model on fold-train, score on fold-val
-  3. Refit best model on full processed train
-  4. Apply saved in-CV transformers to test set → predict
+pipeline.py — полный ML пайплайн
 """
 
 import numpy as np
@@ -21,10 +12,9 @@ from ml_pipeline.preprocessing import TRANSFORMER_REGISTRY
 from ml_pipeline.registry import MODEL_REGISTRY
 
 
-# def _build_transformers(step_cfgs: list, global_cfg: dict) -> list:
 def _build_transformers(preprocessing_steps: list[dict], config) -> list:
     """
-    Instantiate enabled transformers from a list of step config dicts.
+    Собрать пошаговый список препроцессоров
     """
     transformers = []
 
@@ -33,17 +23,16 @@ def _build_transformers(preprocessing_steps: list[dict], config) -> list:
         name = step["name"]
 
         if name not in TRANSFORMER_REGISTRY:
-            raise ValueError(
-                f"Unknown transformer '{name}'. Register it in features.py."
-            )
+            raise ValueError(f"Неизвестный препроцессор '{name}' - нет в реестре")
 
+        # дефолтные параметры препроцессора из реестра
         default_params = config.preprocessing.get(name) or {}
+        # кастомные параметры препроцессора из эксперимента
         custom_params = step.get(name) or {}
 
         merged = {}
 
-        # Merge the step-level config with the global config so transformers
-        # can read things like drop_cols from the top-level config.
+        # влить конфиги вместе
         if default_params or custom_params:
             merged = {**config.preprocessing[name], **step.params}  # type: ignore
 
@@ -59,7 +48,7 @@ def _apply_transformers(
     transformers: list, df: pd.DataFrame, fit: bool
 ) -> pd.DataFrame:
     """
-    Sequentially fit (optional) and transform df through a list of transformers.
+    Применить (при необходимости фиттить) список препроцессоров
     """
     for t in transformers:
         if fit:
@@ -71,13 +60,21 @@ def _apply_transformers(
 
 class MLPipeline:
     def __init__(self, config):
+        # конфиг этого пайплайна
         self.config = config
+        #
+        self.experiment_data: list = []
 
         self.results: dict = {}  # model_name → cv scores + oof preds
         self.final_models: dict = {}  # model_name → refitted model
         self.test_predictions: dict = {}  # model_name → test pred array
 
-    def run(self, train_df: pd.DataFrame, test_df: pd.DataFrame):
+    def reset(self):
+        self.fold_data = []
+
+    def run(self, train_df: pd.DataFrame):
+        self.reset()
+
         target = self.config.data.target_col
 
         y = train_df[target].values
@@ -90,52 +87,53 @@ class MLPipeline:
         X_pre = _apply_transformers([], X_train_raw, fit=True)
         # X_test_pre = _apply_transformers([], test_df, fit=False)
 
-        # print(
-        #     f"After pre-CV FE: train shape {X_pre.shape}, test shape {X_test_pre.shape}\n"
-        # )
-
-        # ── 2. Run each active model ───────────────────────────────────────────
+        # прогнать каждый эксперимент
         for i, experiment_step in enumerate(self.config.experiment.to_train):
             print(f"{i}. {experiment_step.model}")
-            self._run_model(experiment_step, X_pre, y)
+            self._run_model(i, experiment_step, X=X_pre, y=y)
 
-        return self.results
+        # return self.results
 
     # внутренние хелперы
     def _run_model(
         self,
+        index: int,
         experiment_step: dict,
         X: pd.DataFrame,
         y: np.ndarray,
     ):
-        model_name = experiment_step.model  # type: ignore
-        model_config = self.config.models[
-            model_name
-        ]  # TODO add params from experiment step
+        model_name = experiment_step.get("model")
 
-        default_model_params = model_config.params
+        if not model_name:
+            raise ValueError(f"Имя модели {model_name} не передано")
 
+        if model_name not in self.config.models:
+            raise ValueError(f"Конфиг модели {model_name} не настроен")
+
+        model_config = self.config.models.get(model_name)
+
+        # дефолтные параметры из реестра
+        default_model_params = model_config.get("params") or {}
+        # кастомные параметры из конфига, переданного в пайплайн
         custom_model_params = experiment_step.get("params") or {}
 
         model_params = {**default_model_params, **custom_model_params}
 
         if model_name not in MODEL_REGISTRY:
-            raise ValueError(f"Model '{model_name}' not in registry.py.")
+            raise ValueError(f"Неизвестная модель '{model_name}' - нет в реестре")
 
         ModelClass = MODEL_REGISTRY[model_name]
         scorer = get_scorer(self.config.experiment.metric)
 
-        # CV splitter
-        n_folds = self.config.split.cv_n_folds
+        # CV
+        n_folds = self.config.split.n_folds
 
         splitter = StratifiedKFold(
-            n_splits=n_folds, shuffle=True, random_state=self.config.general.seed
+            n_splits=n_folds,
+            shuffle=config.split.shuffle,
+            random_state=self.config.general.seed,
         )
 
-        # fold_scores = []
-        # oof_preds = np.zeros(len(y))
-
-        # данные по всем фолдам
         fold_data = []
 
         for fold_idx, (train_idx, val_idx) in enumerate(splitter.split(X, y)):
@@ -144,12 +142,12 @@ class MLPipeline:
             y_fold_train = y[train_idx]
             y_fold_val = y[val_idx]
 
-            # препроцессоры внутри CV
+            # препроцессоры внутри CV - сборка по train датасету
             preprocess_transformers = _build_transformers(
-                model_config.preprocessing_steps, config
+                model_config.get("preprocessing_steps") or [], config
             )
 
-            # fit on fold-train only, then transform val (no leakage)
+            # применение препроцессоров на validation
             X_fold_train_fe = _apply_transformers(
                 preprocess_transformers, X_fold_train, fit=True
             )
@@ -160,7 +158,7 @@ class MLPipeline:
             # Transform test with the same fold's learned parameters
             # X_test_fe = _apply_transformers(in_cv_transformers, X_test, fit=False)
 
-            # ── Train & score ──────────────────────────────────────────────
+            # тренировка и скоринг
             model = ModelClass(**model_params)
             model.fit(X_fold_train_fe, y_fold_train)
 
@@ -174,31 +172,27 @@ class MLPipeline:
 
             fold_data.append(this_fold_data)
 
-            # fold_scores.append(fold_score)
-
-            # OOF predictions (probability of positive class if available)
-            # if hasattr(model, "predict_proba"):
-            #     oof_preds[val_idx] = model.predict_proba(X_fold_val_fe)[:, 1]
-            #     test_preds_per_fold.append(model.predict_proba(X_test_fe)[:, 1])
-            # else:
-            # oof_preds[val_idx] = model.predict(X_fold_val_fe)
-            # test_preds_per_fold.append(model.predict(X_test_fe))
-
             print(
                 f"Fold {fold_idx+1}/{n_folds}  {self.config.experiment.metric}: {fold_score:.4f}"
             )
 
         fold_scores = [x["score"] for x in fold_data]
 
+        best_index = fold_scores.index(max(fold_scores))
         mean_score = np.mean(fold_scores)
         std_score = np.std(fold_scores)
+
         print(
-            f"\n  CV {self.config.experiment.metric}: {mean_score:.4f}, std: {std_score:.4f}\n"
+            f"-> Best fold: {best_index + 1}, CV {self.config.experiment.metric}: {mean_score:.4f}, std: {std_score:.4f}\n"
         )
 
-        best_index = fold_scores.index(max(fold_scores))
-
-        print(f"\n Best fold: {best_index + 1}")
+        self.experiment_data.append(
+            {
+                "fold_data": fold_data,
+                "cv_mean": mean_score,
+                "cv_std": std_score,
+            }
+        )
 
         # ── 3. Refit on full train with final in-CV transformers ───────────────
         # Fit a fresh set of in-CV transformers on the FULL training data,
