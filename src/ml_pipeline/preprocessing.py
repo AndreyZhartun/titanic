@@ -43,6 +43,7 @@ class FeatureAdder:
             inplace=True,
         )
 
+        # все другие титулы просто Other
         df.loc[~df["Initial"].isin(["Mr", "Miss", "Mrs"]), "Initial"] = "Other"
 
         # family size
@@ -59,8 +60,8 @@ class FeatureDropper:
     Class to drop unneeded features
     """
 
-    def __init__(self) -> None:
-        pass
+    def __init__(self, columns: list[str]) -> None:
+        self.cols = columns
 
     def fit(self, _: pd.DataFrame):
         # nothing to fit
@@ -69,12 +70,7 @@ class FeatureDropper:
     def transform(self, input_df: pd.DataFrame):
         df = input_df.copy()
 
-        # drop name, ticket, cabin, initial because we cannot extract any more info
-        # drop embarked - it was one-hot encoded
-        # drop age and fare because we are using bins instead of continous features
-        df = df.drop(
-            columns=["Name", "Ticket", "Cabin", "Initial", "Embarked", "Age", "Fare"]
-        )
+        df = df.drop(columns=self.cols)
 
         return df
 
@@ -83,6 +79,7 @@ class Imputer:
     def __init__(self) -> None:
         self.mean_ages_by_initials = {}
         self.Embarked_mode = ""
+        self.Fare_mean = 0
 
     def fit(self, df: pd.DataFrame):
         # fill Age using average for Initial
@@ -90,6 +87,9 @@ class Imputer:
 
         # get mode for Embarked
         self.Embarked_mode = df.Embarked.mode()[0]
+
+        # get mean for Fare
+        self.Fare_mean = df.Fare.mean()
 
         return self
 
@@ -103,6 +103,9 @@ class Imputer:
 
         # fill with mode
         df.fillna({"Embarked": self.Embarked_mode}, inplace=True)
+
+        # fill with mean
+        df.fillna({"Fare": self.Fare_mean}, inplace=True)
 
         return df
 
@@ -136,6 +139,7 @@ class ContEncoder:
     def fit(self, df: pd.DataFrame):
         # remember bins from train to use on test
         age_bin_data = pd.cut(df["Age"], bins=5, retbins=True)
+        # inf добавляется, чтобы данные из теста, выходящие за границы бинов, не были NaN
         self.age_bins = [-np.inf, *age_bin_data[1], np.inf]
 
         fare_bin_data = pd.cut(df["Fare"], bins=4, retbins=True)
@@ -157,37 +161,6 @@ class ContEncoder:
         )
 
         return df
-
-
-def preprocess(df: pd.DataFrame) -> pd.DataFrame:
-
-    # df = add_features(df)
-
-    # df = fill_na(df)
-
-    # df = encode_cats(df)
-
-    # df = encode_continuous(df)
-
-    # df = drop_features(df)
-
-    return df
-
-
-def fill_missing_age(input_df: pd.DataFrame) -> pd.DataFrame:
-
-    df = input_df.copy()
-
-    mean_ages_by_initials = df.groupby("Initial").Age.mean().round()
-
-    for initial in list(mean_ages_by_initials.keys()):
-        df.loc[(df.Age.isnull()) & (df.Initial == initial), "Age"] = (
-            mean_ages_by_initials[initial]
-        )
-
-    assert bool(df.Age.isnull().any()) is False
-
-    return df
 
 
 class MyScaler:

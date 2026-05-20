@@ -4,19 +4,30 @@ pipeline.py — полный ML пайплайн
 
 import numpy as np
 import pandas as pd
-from sklearn.model_selection import StratifiedKFold, KFold
+from sklearn.model_selection import StratifiedKFold
 from sklearn.metrics import get_scorer
 
-from ml_pipeline.config import config
 from ml_pipeline.preprocessing import TRANSFORMER_REGISTRY
 from ml_pipeline.registry import MODEL_REGISTRY
+from ml_pipeline.utils import save_to_csv
 
 
-def _build_transformers(preprocessing_steps: list[dict], config) -> list:
+def _build_transformers(model_config: dict, config) -> list:
     """
     Собрать пошаговый список препроцессоров
     """
     transformers = []
+
+    preprocessing_steps = []
+
+    model_preprocessing_type = model_config.get("preprocessing")
+
+    if model_preprocessing_type == "custom":
+        preprocessing_steps = model_config.get("preprocessing_steps") or []
+    else:
+        preprocessing_steps = config.preprocessing.default
+
+    registry = config.preprocessing.registry
 
     for step in preprocessing_steps:
 
@@ -26,7 +37,7 @@ def _build_transformers(preprocessing_steps: list[dict], config) -> list:
             raise ValueError(f"Неизвестный препроцессор '{name}' - нет в реестре")
 
         # дефолтные параметры препроцессора из реестра
-        default_params = config.preprocessing.get(name) or {}
+        default_params = registry.get(name) or {}
         # кастомные параметры препроцессора из эксперимента
         custom_params = step.get(name) or {}
 
@@ -34,10 +45,11 @@ def _build_transformers(preprocessing_steps: list[dict], config) -> list:
 
         # влить конфиги вместе
         if default_params or custom_params:
-            merged = {**config.preprocessing[name], **step.params}  # type: ignore
+            merged = {**default_params, **custom_params}
 
+        # передавать конфиг только если в нем есть параметры
         if len(merged.items()):
-            transformers.append(TRANSFORMER_REGISTRY[name](merged))
+            transformers.append(TRANSFORMER_REGISTRY[name](**merged))
         else:
             transformers.append(TRANSFORMER_REGISTRY[name]())
 
@@ -45,11 +57,13 @@ def _build_transformers(preprocessing_steps: list[dict], config) -> list:
 
 
 def _apply_transformers(
-    transformers: list, df: pd.DataFrame, fit: bool
+    transformers: list, input_df: pd.DataFrame, fit: bool
 ) -> pd.DataFrame:
     """
     Применить (при необходимости фиттить) список препроцессоров
     """
+    df = input_df.copy()
+
     for t in transformers:
         if fit:
             t.fit(df)
@@ -90,14 +104,52 @@ class MLPipeline:
         # прогнать каждый эксперимент
         for i, experiment_step in enumerate(self.config.experiment.to_train):
             print(f"{i}. {experiment_step.model}")
-            self._run_model(i, experiment_step, X=X_pre, y=y)
+            self._run_model(experiment_step, X=X_pre, y=y)
 
         # return self.results
+
+    def predict(self, test_df: pd.DataFrame):
+        strategy = self.config.experiment.prediction.strategy
+        trained_list = self.experiment_data
+
+        if strategy == "each":
+            for i, trained in enumerate(trained_list):
+                predictions = self._predict_model(test_df, trained)
+                # print(predictions)
+
+                test_df_copy = test_df.copy()
+                test_df_copy["Survived"] = predictions
+
+                df_to_save = test_df_copy[["Survived"]]
+                save_to_csv(df_to_save, self.config, i)
+
+        elif strategy == "best":
+            pass
+
+    def _predict_model(self, test_df: pd.DataFrame, exp_data: dict):
+        model = exp_data.get("model")
+
+        fold_data = exp_data.get("fold_data")
+        best_fold_index = exp_data.get("best_fold_index")
+
+        if (not isinstance(fold_data, list)) or (not isinstance(best_fold_index, int)):
+            raise ValueError("Ошибка получения данных эксперимента")
+
+        best_fold = fold_data[best_fold_index]
+
+        transformers = best_fold.get("preprocess_transformers")
+
+        model = best_fold.get("model")
+
+        transformed_test_df = _apply_transformers(transformers, test_df, fit=False)
+
+        predictions = model.predict(transformed_test_df)
+
+        return predictions
 
     # внутренние хелперы
     def _run_model(
         self,
-        index: int,
         experiment_step: dict,
         X: pd.DataFrame,
         y: np.ndarray,
@@ -119,6 +171,8 @@ class MLPipeline:
 
         model_params = {**default_model_params, **custom_model_params}
 
+        print(f"{model_params=}")
+
         if model_name not in MODEL_REGISTRY:
             raise ValueError(f"Неизвестная модель '{model_name}' - нет в реестре")
 
@@ -130,7 +184,7 @@ class MLPipeline:
 
         splitter = StratifiedKFold(
             n_splits=n_folds,
-            shuffle=config.split.shuffle,
+            shuffle=self.config.split.shuffle,
             random_state=self.config.general.seed,
         )
 
@@ -143,9 +197,7 @@ class MLPipeline:
             y_fold_val = y[val_idx]
 
             # препроцессоры внутри CV - сборка по train датасету
-            preprocess_transformers = _build_transformers(
-                model_config.get("preprocessing_steps") or [], config
-            )
+            preprocess_transformers = _build_transformers(model_config, self.config)
 
             # применение препроцессоров на validation
             X_fold_train_fe = _apply_transformers(
@@ -189,6 +241,7 @@ class MLPipeline:
         self.experiment_data.append(
             {
                 "fold_data": fold_data,
+                "best_fold_index": best_index,
                 "cv_mean": mean_score,
                 "cv_std": std_score,
             }
