@@ -122,6 +122,8 @@ class CatEncoder:
 
         df.replace({"Sex": {"male": 0, "female": 1}}, inplace=True)
 
+        df["Sex"] = df["Sex"].astype("int")
+
         embarked_dummies = pd.get_dummies(df.Embarked, dtype=float)
 
         df["Embarked_C"] = embarked_dummies["C"]

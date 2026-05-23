@@ -22,6 +22,7 @@ def _build_transformers(model_config: dict, config) -> list:
 
     model_preprocessing_type = model_config.get("preprocessing")
 
+    # если указан кастомный список препроцессоров, использовать его вместо дефолтного
     if model_preprocessing_type == "custom":
         preprocessing_steps = model_config.get("preprocessing_steps") or []
     else:
@@ -43,7 +44,7 @@ def _build_transformers(model_config: dict, config) -> list:
 
         merged = {}
 
-        # влить конфиги вместе
+        # влить конфиги вместе, кастомные параметры перезаписывают дефолтные при наличии
         if default_params or custom_params:
             merged = {**default_params, **custom_params}
 
@@ -76,16 +77,13 @@ class MLPipeline:
     def __init__(self, config):
         # конфиг этого пайплайна
         self.config = config
-        #
+        # данные каждого эксперимента: модель и метрики фолдов
         self.experiment_data: list = []
-
-        self.results: dict = {}  # model_name → cv scores + oof preds
-        self.final_models: dict = {}  # model_name → refitted model
-        self.test_predictions: dict = {}  # model_name → test pred array
 
     def reset(self):
         self.fold_data = []
 
+    # запустить обучение моделей
     def run(self, train_df: pd.DataFrame):
         self.reset()
 
@@ -99,55 +97,49 @@ class MLPipeline:
         # )
         # TODO: препроцессоры до CV, которые можно применять до отделения теста
         X_pre = _apply_transformers([], X_train_raw, fit=True)
-        # X_test_pre = _apply_transformers([], test_df, fit=False)
 
         # прогнать каждый эксперимент
         for i, experiment_step in enumerate(self.config.experiment.to_train):
             print(f"{i}. {experiment_step.model}")
             self._run_model(experiment_step, X=X_pre, y=y)
 
-        # return self.results
-
+    # инференс отдельно от обучения
     def predict(self, test_df: pd.DataFrame):
         strategy = self.config.experiment.prediction.strategy
         trained_list = self.experiment_data
 
+        # выдать файлы с предсказаниями для каждого эксперимента
         if strategy == "each":
+            print("Predicting for each experiment...")
             for i, trained in enumerate(trained_list):
                 predictions = self._predict_model(test_df, trained)
-                # print(predictions)
 
-                test_df_copy = test_df.copy()
-                test_df_copy["Survived"] = predictions
+                self._save_predictions(test_df, predictions=predictions, index=i)
 
-                df_to_save = test_df_copy[["Survived"]]
-                save_to_csv(df_to_save, self.config, i)
+            print("Predictions saved to csv")
 
+        # выдать файл с предсказаниями только для эксперимента с лучшей метрикой
         elif strategy == "best":
-            pass
+            cv_mean_scores = [x["cv_mean"] for x in self.experiment_data]
+            best_index = cv_mean_scores.index(max(cv_mean_scores))
 
-    def _predict_model(self, test_df: pd.DataFrame, exp_data: dict):
-        model = exp_data.get("model")
+            best_experiment_data = self.experiment_data[best_index]
+            best_experiment_config = self.config.experiment.to_train[best_index]
 
-        fold_data = exp_data.get("fold_data")
-        best_fold_index = exp_data.get("best_fold_index")
+            print(
+                f"Best experiment is {best_index}.{best_experiment_config.model} with {best_experiment_config.get("params")}"
+            )
 
-        if (not isinstance(fold_data, list)) or (not isinstance(best_fold_index, int)):
-            raise ValueError("Ошибка получения данных эксперимента")
+            predictions = self._predict_model(test_df, best_experiment_data)
 
-        best_fold = fold_data[best_fold_index]
+            self._save_predictions(test_df, predictions=predictions, index=best_index)
 
-        transformers = best_fold.get("preprocess_transformers")
+            print("Predictions saved to csv")
 
-        model = best_fold.get("model")
+        else:
+            raise ValueError("Неизвестное значение стратегии prediction")
 
-        transformed_test_df = _apply_transformers(transformers, test_df, fit=False)
-
-        predictions = model.predict(transformed_test_df)
-
-        return predictions
-
-    # внутренние хелперы
+    # прогнать один эксперимент из списка
     def _run_model(
         self,
         experiment_step: dict,
@@ -169,6 +161,7 @@ class MLPipeline:
         # кастомные параметры из конфига, переданного в пайплайн
         custom_model_params = experiment_step.get("params") or {}
 
+        # влить конфиги вместе, кастомные параметры перезаписывают дефолтные при наличии
         model_params = {**default_model_params, **custom_model_params}
 
         print(f"{model_params=}")
@@ -199,16 +192,13 @@ class MLPipeline:
             # препроцессоры внутри CV - сборка по train датасету
             preprocess_transformers = _build_transformers(model_config, self.config)
 
-            # применение препроцессоров на validation
+            # применение препроцессоров на train и validation
             X_fold_train_fe = _apply_transformers(
                 preprocess_transformers, X_fold_train, fit=True
             )
             X_fold_val_fe = _apply_transformers(
                 preprocess_transformers, X_fold_val, fit=False
             )
-
-            # Transform test with the same fold's learned parameters
-            # X_test_fe = _apply_transformers(in_cv_transformers, X_test, fit=False)
 
             # тренировка и скоринг
             model = ModelClass(**model_params)
@@ -225,7 +215,7 @@ class MLPipeline:
             fold_data.append(this_fold_data)
 
             print(
-                f"Fold {fold_idx+1}/{n_folds}  {self.config.experiment.metric}: {fold_score:.4f}"
+                f"Fold {fold_idx + 1}/{n_folds}  {self.config.experiment.metric}: {fold_score:.4f}"
             )
 
         fold_scores = [x["score"] for x in fold_data]
@@ -247,34 +237,33 @@ class MLPipeline:
             }
         )
 
-        # ── 3. Refit on full train with final in-CV transformers ───────────────
-        # Fit a fresh set of in-CV transformers on the FULL training data,
-        # then use them for the final test prediction.
-        # final_in_cv = _build_transformers(model_config.preprocessing_steps)
+    # вернуть предсказания для модели в exp_data
+    def _predict_model(self, test_df: pd.DataFrame, exp_data: dict):
+        model = exp_data.get("model")
 
-        # X_full_fe = _apply_transformers(final_in_cv, X, fit=True)
-        # X_test_full = _apply_transformers(final_in_cv, X_test, fit=False)
+        fold_data = exp_data.get("fold_data")
+        best_fold_index = exp_data.get("best_fold_index")
 
-        # final_model = ModelClass(**model_params)
-        # final_model.fit(X_full_fe, y)
+        if (not isinstance(fold_data, list)) or (not isinstance(best_fold_index, int)):
+            raise ValueError("Ошибка получения данных эксперимента")
 
-        # ── 4. Test predictions ────────────────────────────────────────────────
-        # Two options offered: averaged fold preds (ensemble) vs single final model.
-        # test_preds_avg = np.mean(test_preds_per_fold, axis=0)
-        # if hasattr(final_model, "predict_proba"):
-        #     test_preds_final = final_model.predict_proba(X_test_full)[:, 1]
-        # else:
-        # test_preds_final = final_model.predict(X_test_full)
+        best_fold = fold_data[best_fold_index]
 
-        self.results[model_name] = {
-            "fold_scores": fold_scores,
-            "cv_mean": mean_score,
-            "cv_std": std_score,
-            # "oof_predictions": oof_preds,
-        }
+        transformers = best_fold.get("preprocess_transformers")
 
-        # self.final_models[model_name] = final_model
-        # self.test_predictions[model_name] = {
-        #     "averaged_folds": test_preds_avg,  # softer, usually better
-        #     "final_model": test_preds_final,  # single model refitted on all train
-        # }
+        model = best_fold.get("model")
+
+        transformed_test_df = _apply_transformers(transformers, test_df, fit=False)
+
+        predictions = model.predict(transformed_test_df)
+
+        return predictions
+
+    def _save_predictions(
+        self, test_df: pd.DataFrame, *, predictions: list, index: int
+    ):
+        test_df_copy = test_df.copy()
+        test_df_copy["Survived"] = predictions
+
+        df_to_save = test_df_copy[["Survived"]]
+        save_to_csv(df_to_save, self.config, index)

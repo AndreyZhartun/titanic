@@ -15,7 +15,8 @@ config = {
         "target_col": "Survived"
     },
     "training": {
-        "lr": 1e-4
+        "learning_rate": 0.1,
+        "boosting_tree_depth": 6,
     },
     "split": {
         "shuffle": True, 
@@ -89,6 +90,38 @@ config = {
                 "max_depth": 3,
                 "random_state": "${general.seed}"
             },
+        },
+        "catboost": {
+            "preprocessing": "default",
+            "params": {
+                "iterations": 200,
+                "depth": "${training.boosting_tree_depth}",
+                "cat_features": ["Sex", "Pclass", "SibSp", "Parch", "Alone", "Age_Group", "Fare_Range"],
+                "learning_rate": "${training.learning_rate}",
+                "random_state": "${general.seed}",
+                "verbose": 0
+            }
+        },
+        "lightgbm": {
+            "preprocessing": "default",
+            "params": {
+                "n_estimators": 200,
+                "max_depth": "${training.boosting_tree_depth}",
+                "learning_rate": "${training.learning_rate}",
+                "random_state": "${general.seed}",
+                "verbose": -1
+            }
+        },
+        "xgboost": {
+            "preprocessing": "default",
+            "params": {
+                "n_estimators": 200,
+                "max_depth": "${training.boosting_tree_depth}",
+                "use_label_encoder": False,
+                "eval_metric": "logloss",
+                "learning_rate": "${training.learning_rate}",
+                "random_state": "${general.seed}"
+            }
         }
     },
     "experiment": {
@@ -114,11 +147,20 @@ config = {
             },
             {
                 "model": "random_forest"
+            },
+            {
+                "model": "catboost"
+            },
+            {
+                "model": "lightgbm"
+            },
+            {
+                "model": "xgboost"
             }
         ],
         "prediction": {
             # each / best
-            "strategy": "each"
+            "strategy": "best"
         }
     },
 }
