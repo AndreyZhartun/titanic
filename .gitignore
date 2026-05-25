@@ -1,7 +1,10 @@
 /__pycache__
 *.pyc
 *.egg-info
+*.feather
 /__ignore__
 /submissions
 /catboost_info
 settings.json
+/.idea
+/.vscode

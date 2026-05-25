@@ -52,6 +52,15 @@ class FeatureAdder:
         df["Alone"] = 0
         df.loc[df.Family_Size == 0, "Alone"] = 1
 
+        # 4 и больше родственников
+        df["More_Than_4_relatives"] = 0
+        df.loc[df.Family_Size >= 4, "More_Than_4_relatives"] = 1
+
+        # порядок билета
+        df["Ticket_Type"] = df["Ticket"].apply(lambda x: x[0:3])
+        df["Ticket_Type"] = df["Ticket_Type"].astype("category")
+        df["Ticket_Type"] = df["Ticket_Type"].cat.codes
+
         return df
 
 
@@ -157,15 +166,19 @@ class ContEncoder:
             df["Age"], bins=self.age_bins, labels=range(0, len(self.age_bins) - 1)
         )
 
+        df["Age_Group"] = df["Age_Group"].astype("int")
+
         # fare range
         df["Fare_Range"] = pd.cut(
             df["Fare"], bins=self.fare_bins, labels=range(0, len(self.fare_bins) - 1)
         )
 
+        df["Fare_Range"] = df["Fare_Range"].astype("int")
+
         return df
 
 
-class MyScaler:
+class Scaler:
     def __init__(self, *, num_cols: list[str], mm_cols: list[str]) -> None:
         self.num_cols = num_cols
         self.mm_cols = mm_cols
@@ -173,11 +186,11 @@ class MyScaler:
         self.scaler = StandardScaler()
         self.mm_scaler = MinMaxScaler()
 
-    def fit_transform(self, input_df: pd.DataFrame) -> pd.DataFrame:
+    def fit(self, input_df: pd.DataFrame) -> pd.DataFrame:
         df = input_df.copy()
 
         # df[self.num_cols] = self.scaler.fit_transform(df[self.num_cols])
-        df[self.mm_cols] = self.mm_scaler.fit_transform(df[self.mm_cols])
+        self.mm_scaler.fit(df[self.mm_cols])
 
         return df
 
@@ -185,9 +198,22 @@ class MyScaler:
         df = input_df.copy()
 
         # df[self.num_cols] = self.scaler.transform(df[self.num_cols])
-        df[self.mm_cols] = self.mm_scaler.transform(df[self.mm_cols])
+
+        # хз почему скейлер дублирует колонки вместо того, чтобы заменять их
+        # поэтому тут невероятные костыли
+        df = df.drop(columns=self.mm_cols)
+
+        df[self.mm_cols] = self.mm_scaler.transform(input_df[self.mm_cols])
 
         return df
+
+
+class OpenFEAdapter:
+    def __init__(self) -> None:
+        pass
+
+    def fit(self, train_df: pd.DataFrame, test: pd.Series):
+        pass
 
 
 # Registry
@@ -198,4 +224,5 @@ TRANSFORMER_REGISTRY: dict = {
     "feature_dropper": FeatureDropper,
     "cat_encoder": CatEncoder,
     "cont_encoder": ContEncoder,
+    "scaler": Scaler,
 }

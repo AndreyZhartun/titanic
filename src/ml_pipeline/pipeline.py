@@ -4,11 +4,11 @@ pipeline.py — полный ML пайплайн
 
 import numpy as np
 import pandas as pd
-from sklearn.model_selection import StratifiedKFold
+from sklearn.model_selection import StratifiedKFold, train_test_split
 from sklearn.metrics import get_scorer
 
 from ml_pipeline.preprocessing import TRANSFORMER_REGISTRY
-from ml_pipeline.registry import MODEL_REGISTRY
+from ml_pipeline.models import MODEL_REGISTRY
 from ml_pipeline.utils import save_to_csv
 
 
@@ -146,76 +146,15 @@ class MLPipeline:
         X: pd.DataFrame,
         y: np.ndarray,
     ):
-        model_name = experiment_step.get("model")
-
-        if not model_name:
-            raise ValueError(f"Имя модели {model_name} не передано")
-
-        if model_name not in self.config.models:
-            raise ValueError(f"Конфиг модели {model_name} не настроен")
-
-        model_config = self.config.models.get(model_name)
-
-        # дефолтные параметры из реестра
-        default_model_params = model_config.get("params") or {}
-        # кастомные параметры из конфига, переданного в пайплайн
-        custom_model_params = experiment_step.get("params") or {}
-
-        # влить конфиги вместе, кастомные параметры перезаписывают дефолтные при наличии
-        model_params = {**default_model_params, **custom_model_params}
-
-        print(f"{model_params=}")
-
-        if model_name not in MODEL_REGISTRY:
-            raise ValueError(f"Неизвестная модель '{model_name}' - нет в реестре")
-
-        ModelClass = MODEL_REGISTRY[model_name]
-        scorer = get_scorer(self.config.experiment.metric)
-
-        # CV
-        n_folds = self.config.split.n_folds
-
-        splitter = StratifiedKFold(
-            n_splits=n_folds,
-            shuffle=self.config.split.shuffle,
-            random_state=self.config.general.seed,
-        )
+        cv = self.config.split.cv
 
         fold_data = []
 
-        for fold_idx, (train_idx, val_idx) in enumerate(splitter.split(X, y)):
-            X_fold_train = X.iloc[train_idx].reset_index(drop=True)
-            X_fold_val = X.iloc[val_idx].reset_index(drop=True)
-            y_fold_train = y[train_idx]
-            y_fold_val = y[val_idx]
-
-            # препроцессоры внутри CV - сборка по train датасету
-            preprocess_transformers = _build_transformers(model_config, self.config)
-
-            # применение препроцессоров на train и validation
-            X_fold_train_fe = _apply_transformers(
-                preprocess_transformers, X_fold_train, fit=True
-            )
-            X_fold_val_fe = _apply_transformers(
-                preprocess_transformers, X_fold_val, fit=False
-            )
-
-            # тренировка и скоринг
-            model = ModelClass(**model_params)
-            model.fit(X_fold_train_fe, y_fold_train)
-
-            fold_score = scorer(model, X_fold_val_fe, y_fold_val)
-
-            this_fold_data = {
-                "model": model,
-                "score": fold_score,
-                "preprocess_transformers": preprocess_transformers,
-            }
-
-            fold_data.append(this_fold_data)
-
-            print(
-                f"Fold {fold_idx + 1}/{n_folds}  {self.config.experiment.metric}: {fold_score:.4f}"
+        if cv:
+            fold_data = self._run_cv(experiment_step=experiment_step, X=X, y=y)
+        else:
+            fold_data = self._run_single_split(
+                experiment_step=experiment_step, X=X, y=y
             )
 
         fold_scores = [x["score"] for x in fold_data]
@@ -236,6 +175,135 @@ class MLPipeline:
                 "cv_std": std_score,
             }
         )
+
+    # подготовить данные и модель фолда
+    def _prepare_fold(self, *, experiment_step: dict, X_train, X_test):
+        model_name = experiment_step.get("model")
+
+        if model_name not in MODEL_REGISTRY:
+            raise ValueError(f"Неизвестная модель '{model_name}' - нет в реестре")
+
+        model_config = self.config.models.get(model_name)
+
+        # дефолтные параметры из реестра
+        default_model_params = model_config.get("params") or {}
+        # кастомные параметры из конфига, переданного в пайплайн
+        custom_model_params = experiment_step.get("params") or {}
+
+        # влить конфиги вместе, кастомные параметры перезаписывают дефолтные при наличии
+        model_params = {**default_model_params, **custom_model_params}
+
+        ModelClass = MODEL_REGISTRY[model_name]
+
+        # препроцессоры внутри CV - сборка по train датасету
+        preprocess_transformers = _build_transformers(model_config, self.config)
+
+        # применение препроцессоров на train и validation
+        X_train_transformed = _apply_transformers(
+            preprocess_transformers, X_train, fit=True
+        )
+        X_test_transformed = _apply_transformers(
+            preprocess_transformers, X_test, fit=False
+        )
+
+        # тренировка и скоринг
+        model = ModelClass(**model_params)
+
+        print(f"Prepared model with params: {model_params or {}}")
+
+        return (X_train_transformed, X_test_transformed, model, preprocess_transformers)
+
+    def _run_single_split(self, *, experiment_step: dict, X, y):
+        verbose = self.config.general.verbose
+        test_size = self.config.split.test_size
+
+        scorer = get_scorer(self.config.experiment.metric)
+
+        fold_data = []
+
+        X_train, X_val, y_train, y_val = train_test_split(
+            X, y, test_size=test_size, random_state=self.config.general.seed, stratify=y
+        )
+
+        X_train_tranformed, X_val_transformed, model, preprocess_transformers = (
+            self._prepare_fold(
+                experiment_step=experiment_step,
+                X_train=X_train,
+                X_test=X_val,
+            )
+        )
+
+        if verbose:
+            print(f"Single split: trying to fit model on data")
+            print(X_train_tranformed)
+
+        # тренировка и скоринг
+        model.fit(X_train_tranformed, y_train)
+
+        fold_score = scorer(model, X_val_transformed, y_val)
+
+        this_fold_data = {
+            "model": model,
+            "score": fold_score,
+            "preprocess_transformers": preprocess_transformers,
+        }
+
+        fold_data.append(this_fold_data)
+
+        print(f"Single split {self.config.experiment.metric}: {fold_score:.4f}")
+
+        return fold_data
+
+    def _run_cv(self, *, experiment_step: dict, X, y):
+        verbose = self.config.general.verbose
+        n_folds = self.config.split.n_folds
+
+        scorer = get_scorer(self.config.experiment.metric)
+
+        splitter = StratifiedKFold(
+            n_splits=n_folds,
+            shuffle=self.config.split.shuffle,
+            random_state=self.config.general.seed,
+        )
+
+        fold_data = []
+
+        for fold_idx, (train_idx, val_idx) in enumerate(splitter.split(X, y)):
+            X_fold_train = X.iloc[train_idx].reset_index(drop=True)
+            X_fold_val = X.iloc[val_idx].reset_index(drop=True)
+            y_fold_train = y[train_idx]
+            y_fold_val = y[val_idx]
+
+            X_train_tranformed, X_val_transformed, model, preprocess_transformers = (
+                self._prepare_fold(
+                    experiment_step=experiment_step,
+                    X_train=X_fold_train,
+                    X_test=X_fold_val,
+                )
+            )
+
+            if verbose:
+                print(f"Fold {fold_idx}: trying to fit model on data")
+                print(X_train_tranformed)
+
+            # тренировка и скоринг
+            model.fit(X_train_tranformed, y_fold_train)
+
+            fold_score = scorer(model, X_val_transformed, y_fold_val)
+
+            this_fold_data = {
+                "model": model,
+                "score": fold_score,
+                "preprocess_transformers": preprocess_transformers,
+            }
+
+            fold_data.append(this_fold_data)
+
+            print(
+                f"Fold {fold_idx + 1}/{n_folds}  {self.config.experiment.metric}: {fold_score:.4f}"
+            )
+
+        return fold_data
 
     # вернуть предсказания для модели в exp_data
     def _predict_model(self, test_df: pd.DataFrame, exp_data: dict):
@@ -259,6 +327,7 @@ class MLPipeline:
 
         return predictions
 
+    # сохранить предсказания
     def _save_predictions(
         self, test_df: pd.DataFrame, *, predictions: list, index: int
     ):

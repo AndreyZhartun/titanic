@@ -4,7 +4,8 @@ from omegaconf import OmegaConf
 config = {
     "general": {
         "experiment_name": "lin&tree", 
-        "seed": 42
+        "seed": 42,
+        "verbose": False
     },
     "paths": {
         "train": "data/train.csv", 
@@ -19,8 +20,11 @@ config = {
         "boosting_tree_depth": 6,
     },
     "split": {
-        "shuffle": True, 
+        "cv": True,
+        "shuffle": True,
+        # если cv=False, в разбитие на трейн и тест это доля теста
         "test_size": 0.2, 
+        # если cv=True, это количество фолдов
         "n_folds": 5
     },
     "preprocessing": {
@@ -34,7 +38,11 @@ config = {
             },
             "imputer": {},
             "cat_encoder": {},
-            "cont_encoder": {}
+            "cont_encoder": {},
+            "scaler": {
+                "num_cols": [],
+                "mm_cols": ["Ticket_Type"]
+            }
         },
         "default": [
             {
@@ -52,6 +60,9 @@ config = {
             {
                 "name": "feature_dropper"
             },
+            {
+                "name": "scaler"
+            }
         ]
     },
     "models": {
@@ -94,7 +105,7 @@ config = {
         "catboost": {
             "preprocessing": "default",
             "params": {
-                "iterations": 200,
+                "iterations": 300,
                 "depth": "${training.boosting_tree_depth}",
                 "cat_features": ["Sex", "Pclass", "SibSp", "Parch", "Alone", "Age_Group", "Fare_Range"],
                 "learning_rate": "${training.learning_rate}",
@@ -105,7 +116,7 @@ config = {
         "lightgbm": {
             "preprocessing": "default",
             "params": {
-                "n_estimators": 200,
+                "n_estimators": 300,
                 "max_depth": "${training.boosting_tree_depth}",
                 "learning_rate": "${training.learning_rate}",
                 "random_state": "${general.seed}",
@@ -115,9 +126,8 @@ config = {
         "xgboost": {
             "preprocessing": "default",
             "params": {
-                "n_estimators": 200,
+                "n_estimators": 300,
                 "max_depth": "${training.boosting_tree_depth}",
-                "use_label_encoder": False,
                 "eval_metric": "logloss",
                 "learning_rate": "${training.learning_rate}",
                 "random_state": "${general.seed}"
@@ -159,7 +169,8 @@ config = {
             }
         ],
         "prediction": {
-            # each / best
+            # each - каждый эксперимент
+            # best - лучший по метрике эксперимент
             "strategy": "best"
         }
     },
