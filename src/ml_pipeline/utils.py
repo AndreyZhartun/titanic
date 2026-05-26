@@ -1,20 +1,104 @@
 import random
 import numpy as np
 import pandas as pd
+import torch
 
 from pathlib import Path
 import datetime
 import os
 
+from ml_pipeline.preprocessing import TRANSFORMER_REGISTRY
+
 
 def set_seed(seed: int):
     random.seed(seed)
     np.random.seed(seed)
+    torch.manual_seed(seed)
+
+
+def build_transformers(model_config: dict, config) -> list:
+    """
+    Собрать пошаговый список препроцессоров
+    """
+    transformers = []
+
+    preprocessing_steps = []
+
+    model_preprocessing_type = model_config.get("preprocessing")
+
+    # если указан кастомный список препроцессоров, использовать его вместо дефолтного
+    if model_preprocessing_type == "custom":
+        preprocessing_steps = model_config.get("preprocessing_steps") or []
+    else:
+        preprocessing_steps = config.preprocessing.default
+
+    registry = config.preprocessing.registry
+
+    for step in preprocessing_steps:
+
+        name = step["name"]
+
+        if name not in TRANSFORMER_REGISTRY:
+            raise ValueError(f"Неизвестный препроцессор '{name}' - нет в реестре")
+
+        # дефолтные параметры препроцессора из реестра
+        default_params = registry.get(name) or {}
+        # кастомные параметры препроцессора из эксперимента
+        custom_params = step.get(name) or {}
+
+        merged = {}
+
+        # влить конфиги вместе, кастомные параметры перезаписывают дефолтные при наличии
+        if default_params or custom_params:
+            merged = {**default_params, **custom_params}
+
+        # передавать конфиг только если в нем есть параметры
+        if len(merged.items()):
+            transformers.append(TRANSFORMER_REGISTRY[name](**merged))
+        else:
+            transformers.append(TRANSFORMER_REGISTRY[name]())
+
+    return transformers
+
+
+def apply_transformers(
+    transformers: list, input_df: pd.DataFrame, fit: bool
+) -> pd.DataFrame:
+    """
+    Применить (при необходимости фиттить) список препроцессоров
+    """
+    df = input_df.copy()
+
+    for t in transformers:
+        if fit:
+            t.fit(df)
+        df = t.transform(df)
+
+    return df
+
+
+def get_model_params(config, train_step):
+    model_name = train_step.get("model")
+
+    model_config = config.models.get(model_name)
+
+    # дефолтные параметры из реестра
+    default_model_params = model_config.get("params") or {}
+    # кастомные параметры из конфига, переданного в пайплайн
+    custom_model_params = train_step.get("params") or {}
+
+    # влить конфиги вместе, кастомные параметры перезаписывают дефолтные при наличии
+    model_params = {**default_model_params, **custom_model_params}
+
+    return model_params
 
 
 def save_to_csv(df: pd.DataFrame, config, index: int):
+    """
+    Сохранить датафрейм в csv
+    """
     path = config.paths.submissions_dir
-    # path.mkdir(parents=True, exist_ok=True)
+
     try:
         os.mkdir(path)
     except FileExistsError:

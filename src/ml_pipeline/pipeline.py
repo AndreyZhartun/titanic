@@ -9,79 +9,26 @@ from sklearn.metrics import get_scorer
 
 from ml_pipeline.preprocessing import TRANSFORMER_REGISTRY
 from ml_pipeline.models import MODEL_REGISTRY
-from ml_pipeline.utils import save_to_csv
+from ml_pipeline.utils import (
+    build_transformers,
+    apply_transformers,
+    get_model_params,
+    save_to_csv,
+)
 
 
-def _build_transformers(model_config: dict, config) -> list:
-    """
-    Собрать пошаговый список препроцессоров
-    """
-    transformers = []
-
-    preprocessing_steps = []
-
-    model_preprocessing_type = model_config.get("preprocessing")
-
-    # если указан кастомный список препроцессоров, использовать его вместо дефолтного
-    if model_preprocessing_type == "custom":
-        preprocessing_steps = model_config.get("preprocessing_steps") or []
-    else:
-        preprocessing_steps = config.preprocessing.default
-
-    registry = config.preprocessing.registry
-
-    for step in preprocessing_steps:
-
-        name = step["name"]
-
-        if name not in TRANSFORMER_REGISTRY:
-            raise ValueError(f"Неизвестный препроцессор '{name}' - нет в реестре")
-
-        # дефолтные параметры препроцессора из реестра
-        default_params = registry.get(name) or {}
-        # кастомные параметры препроцессора из эксперимента
-        custom_params = step.get(name) or {}
-
-        merged = {}
-
-        # влить конфиги вместе, кастомные параметры перезаписывают дефолтные при наличии
-        if default_params or custom_params:
-            merged = {**default_params, **custom_params}
-
-        # передавать конфиг только если в нем есть параметры
-        if len(merged.items()):
-            transformers.append(TRANSFORMER_REGISTRY[name](**merged))
-        else:
-            transformers.append(TRANSFORMER_REGISTRY[name]())
-
-    return transformers
-
-
-def _apply_transformers(
-    transformers: list, input_df: pd.DataFrame, fit: bool
-) -> pd.DataFrame:
-    """
-    Применить (при необходимости фиттить) список препроцессоров
-    """
-    df = input_df.copy()
-
-    for t in transformers:
-        if fit:
-            t.fit(df)
-        df = t.transform(df)
-
-    return df
-
-
+# класс полного пайплайна
 class MLPipeline:
     def __init__(self, config):
         # конфиг этого пайплайна
+        # может отличаться от дефолтного конфига в рамках конкретного объекта пайплайна, поэтому все поля конфига берутся отсюда
         self.config = config
-        # данные каждого эксперимента: модель и метрики фолдов
-        self.experiment_data: list = []
+        # результаты каждого эксперимента: модели и метрики фолдов
+        self.results: list = []
 
+    # сбросить обученные модели
     def reset(self):
-        self.fold_data = []
+        self.results = []
 
     # запустить обучение моделей
     def run(self, train_df: pd.DataFrame):
@@ -96,21 +43,21 @@ class MLPipeline:
         #     self.cfg.get("pre_cv_steps", []), self.cfg
         # )
         # TODO: препроцессоры до CV, которые можно применять до отделения теста
-        X_pre = _apply_transformers([], X_train_raw, fit=True)
+        X_pre = apply_transformers([], X_train_raw, fit=True)
 
-        # прогнать каждый эксперимент
-        for i, experiment_step in enumerate(self.config.experiment.to_train):
-            print(f"{i}. {experiment_step.model}")
-            self._run_model(experiment_step, X=X_pre, y=y)
+        # прогнать каждый шаг эксперимента
+        for i, train_step in enumerate(self.config.experiment.to_train):
+            self._run_model(index=i, train_step=train_step, X=X_pre, y=y)
 
     # инференс отдельно от обучения
     def predict(self, test_df: pd.DataFrame):
         strategy = self.config.experiment.prediction.strategy
-        trained_list = self.experiment_data
+        trained_list = self.results
 
         # выдать файлы с предсказаниями для каждого эксперимента
         if strategy == "each":
-            print("Predicting for each experiment...")
+            print("Predicting for each step...")
+
             for i, trained in enumerate(trained_list):
                 predictions = self._predict_model(test_df, trained)
 
@@ -120,17 +67,18 @@ class MLPipeline:
 
         # выдать файл с предсказаниями только для эксперимента с лучшей метрикой
         elif strategy == "best":
-            cv_mean_scores = [x["cv_mean"] for x in self.experiment_data]
+            cv_mean_scores = [x["cv_mean"] for x in self.results]
+            # индекс лучшего эксперимента
             best_index = cv_mean_scores.index(max(cv_mean_scores))
 
-            best_experiment_data = self.experiment_data[best_index]
-            best_experiment_config = self.config.experiment.to_train[best_index]
+            best_result = self.results[best_index]
+            best_config = self.config.experiment.to_train[best_index]
 
             print(
-                f"Best experiment is {best_index}.{best_experiment_config.model} with {best_experiment_config.get("params")}"
+                f"Best step is {best_index}.{best_config.model} with {best_config.get("params")}"
             )
 
-            predictions = self._predict_model(test_df, best_experiment_data)
+            predictions = self._predict_model(test_df, best_result)
 
             self._save_predictions(test_df, predictions=predictions, index=best_index)
 
@@ -142,7 +90,8 @@ class MLPipeline:
     # прогнать один эксперимент из списка
     def _run_model(
         self,
-        experiment_step: dict,
+        index: int,
+        train_step: dict,
         X: pd.DataFrame,
         y: np.ndarray,
     ):
@@ -150,12 +99,37 @@ class MLPipeline:
 
         fold_data = []
 
-        if cv:
-            fold_data = self._run_cv(experiment_step=experiment_step, X=X, y=y)
+        model_name = train_step.get("model")
+
+        if model_name not in MODEL_REGISTRY:
+            raise ValueError(f"Неизвестная модель '{model_name}' - нет в реестре")
+
+        model_config = self.config.models.get(model_name)
+
+        is_deep = model_config.get("deep_learning") or False
+
+        if is_deep:
+            print(f"Running ({index}): {model_name} as deep learning model")
+            # fold_data = run_dnn(self.config, train_step, X, y)
         else:
-            fold_data = self._run_single_split(
-                experiment_step=experiment_step, X=X, y=y
-            )
+            model_params = get_model_params(self.config, train_step)
+
+            print(f"Running ({index}): {model_name} with {model_params}")
+
+            if cv:
+                fold_data = self._run_cv(
+                    model_name=model_name,
+                    model_params=model_params,
+                    X=X,
+                    y=y,
+                )
+            else:
+                fold_data = self._run_single_split(
+                    model_name=model_name,
+                    model_params=model_params,
+                    X=X,
+                    y=y,
+                )
 
         fold_scores = [x["score"] for x in fold_data]
 
@@ -167,7 +141,7 @@ class MLPipeline:
             f"-> Best fold: {best_index + 1}, CV {self.config.experiment.metric}: {mean_score:.4f}, std: {std_score:.4f}\n"
         )
 
-        self.experiment_data.append(
+        self.results.append(
             {
                 "fold_data": fold_data,
                 "best_fold_index": best_index,
@@ -177,43 +151,30 @@ class MLPipeline:
         )
 
     # подготовить данные и модель фолда
-    def _prepare_fold(self, *, experiment_step: dict, X_train, X_test):
-        model_name = experiment_step.get("model")
-
-        if model_name not in MODEL_REGISTRY:
-            raise ValueError(f"Неизвестная модель '{model_name}' - нет в реестре")
+    def _prepare_fold(self, *, model_name: str, model_params: dict, X_train, X_test):
 
         model_config = self.config.models.get(model_name)
-
-        # дефолтные параметры из реестра
-        default_model_params = model_config.get("params") or {}
-        # кастомные параметры из конфига, переданного в пайплайн
-        custom_model_params = experiment_step.get("params") or {}
-
-        # влить конфиги вместе, кастомные параметры перезаписывают дефолтные при наличии
-        model_params = {**default_model_params, **custom_model_params}
 
         ModelClass = MODEL_REGISTRY[model_name]
 
         # препроцессоры внутри CV - сборка по train датасету
-        preprocess_transformers = _build_transformers(model_config, self.config)
+        preprocess_transformers = build_transformers(model_config, self.config)
 
         # применение препроцессоров на train и validation
-        X_train_transformed = _apply_transformers(
+        X_train_transformed = apply_transformers(
             preprocess_transformers, X_train, fit=True
         )
-        X_test_transformed = _apply_transformers(
+        X_test_transformed = apply_transformers(
             preprocess_transformers, X_test, fit=False
         )
 
-        # тренировка и скоринг
+        # создание объекта модели
         model = ModelClass(**model_params)
-
-        print(f"Prepared model with params: {model_params or {}}")
 
         return (X_train_transformed, X_test_transformed, model, preprocess_transformers)
 
-    def _run_single_split(self, *, experiment_step: dict, X, y):
+    # прогнать один сплит для шага эксперимента
+    def _run_single_split(self, *, model_name: str, model_params: dict, X, y):
         verbose = self.config.general.verbose
         test_size = self.config.split.test_size
 
@@ -227,7 +188,8 @@ class MLPipeline:
 
         X_train_tranformed, X_val_transformed, model, preprocess_transformers = (
             self._prepare_fold(
-                experiment_step=experiment_step,
+                model_name=model_name,
+                model_params=model_params,
                 X_train=X_train,
                 X_test=X_val,
             )
@@ -254,7 +216,8 @@ class MLPipeline:
 
         return fold_data
 
-    def _run_cv(self, *, experiment_step: dict, X, y):
+    # прогнать кросс-валидацию для шага эксперимента
+    def _run_cv(self, *, model_name: str, model_params: dict, X, y):
         verbose = self.config.general.verbose
         n_folds = self.config.split.n_folds
 
@@ -276,7 +239,8 @@ class MLPipeline:
 
             X_train_tranformed, X_val_transformed, model, preprocess_transformers = (
                 self._prepare_fold(
-                    experiment_step=experiment_step,
+                    model_name=model_name,
+                    model_params=model_params,
                     X_train=X_fold_train,
                     X_test=X_fold_val,
                 )
@@ -300,28 +264,56 @@ class MLPipeline:
             fold_data.append(this_fold_data)
 
             print(
-                f"Fold {fold_idx + 1}/{n_folds}  {self.config.experiment.metric}: {fold_score:.4f}"
+                f"Fold {fold_idx + 1}/{n_folds} {self.config.experiment.metric}: {fold_score:.4f}"
             )
 
         return fold_data
 
-    # вернуть предсказания для модели в exp_data
-    def _predict_model(self, test_df: pd.DataFrame, exp_data: dict):
-        model = exp_data.get("model")
+    # вернуть предсказания для модели в result
+    def _predict_model(self, test_df: pd.DataFrame, result: dict):
 
-        fold_data = exp_data.get("fold_data")
-        best_fold_index = exp_data.get("best_fold_index")
+        fold_data = result.get("fold_data")
+        best_fold_index = result.get("best_fold_index")
 
         if (not isinstance(fold_data, list)) or (not isinstance(best_fold_index, int)):
-            raise ValueError("Ошибка получения данных эксперимента")
+            raise ValueError("Ошибка получения результатов эксперимента")
 
-        best_fold = fold_data[best_fold_index]
+        fold_strategy = self.config.experiment.prediction.fold_strategy
 
-        transformers = best_fold.get("preprocess_transformers")
+        predictions = []
 
-        model = best_fold.get("model")
+        if fold_strategy == "best":
+            best_fold = fold_data[best_fold_index]
 
-        transformed_test_df = _apply_transformers(transformers, test_df, fit=False)
+            predictions = self._predict_fold(test_df, best_fold)
+
+            return predictions
+
+        # голосование: найти среднее предсказание для всех фолдов и сравнить с порогом
+        if fold_strategy == "vote":
+            # порог для положительной классификации
+            fold_vote_threshold = self.config.experiment.prediction.fold_vote_threshold
+            fold_predictions = []
+
+            for fold in fold_data:
+                fold_predictions.append(self._predict_fold(test_df, fold))
+
+            fold_predictions_sum = np.sum(fold_predictions, axis=0)
+
+            predictions = (
+                (fold_predictions_sum / len(fold_data)) > fold_vote_threshold
+            ).astype("int")
+
+            return predictions
+
+        raise ValueError("Неизвестное значение стратегии prediction.fold_strategy")
+
+    def _predict_fold(self, test_df: pd.DataFrame, fold_data):
+        transformers = fold_data.get("preprocess_transformers")
+
+        model = fold_data.get("model")
+
+        transformed_test_df = apply_transformers(transformers, test_df, fit=False)
 
         predictions = model.predict(transformed_test_df)
 

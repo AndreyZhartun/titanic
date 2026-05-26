@@ -132,6 +132,18 @@ config = {
                 "learning_rate": "${training.learning_rate}",
                 "random_state": "${general.seed}"
             }
+        },
+        "dnn": {
+            "preprocessing": "default",
+            "params": {
+                "in_features": 12,
+                "epochs": 100,
+                "batch_size": 16,
+                "learning_rate": "${training.learning_rate}",
+                "random_state": "${general.seed}",
+                # 
+                "test_size": "${split.test_size}"
+            }
         }
     },
     "experiment": {
@@ -166,12 +178,23 @@ config = {
             },
             {
                 "model": "xgboost"
+            },
+            {
+                "model": "dnn",
+                "params": {
+                    "learning_rate": 0.001
+                }
             }
         ],
         "prediction": {
             # each - каждый эксперимент
             # best - лучший по метрике эксперимент
-            "strategy": "best"
+            "strategy": "best",
+            # vote - голосование фолдов
+            # best - лучший по метрике фолд
+            "fold_strategy": "best",
+            # порог положительной классификации для голосования
+            "fold_vote_threshold": 0.5
         }
     },
 }
