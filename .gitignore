@@ -8,3 +8,4 @@
 settings.json
 /.idea
 /.vscode
+/pytorch_models

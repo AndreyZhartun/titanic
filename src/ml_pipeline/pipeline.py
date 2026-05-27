@@ -14,30 +14,41 @@ from ml_pipeline.utils import (
     apply_transformers,
     get_model_params,
     save_to_csv,
+    set_seed,
 )
+from ml_pipeline.config import config as default_config
 
 
 # класс полного пайплайна
 class MLPipeline:
-    def __init__(self, config):
+    def __init__(self, config=default_config):
         # конфиг этого пайплайна
         # может отличаться от дефолтного конфига в рамках конкретного объекта пайплайна, поэтому все поля конфига берутся отсюда
         self.config = config
         # результаты каждого эксперимента: модели и метрики фолдов
         self.results: list = []
 
+        # установка сида
+        set_seed(self.config.general.seed)
+
+        # загрузка данных
+        index_col = self.config.data.index_col
+
+        self.train_df = pd.read_csv(self.config.paths.train, index_col=index_col)
+        self.test_df = pd.read_csv(self.config.paths.test, index_col=index_col)
+
     # сбросить обученные модели
     def reset(self):
         self.results = []
 
     # запустить обучение моделей
-    def run(self, train_df: pd.DataFrame):
+    def run(self):
         self.reset()
 
         target = self.config.data.target_col
 
-        y = train_df[target].values
-        X_train_raw = train_df.drop(columns=[target])
+        y = self.train_df[target].values
+        X_train_raw = self.train_df.drop(columns=[target])
 
         # pre_transformers = _build_transformers(
         #     self.cfg.get("pre_cv_steps", []), self.cfg
@@ -50,7 +61,7 @@ class MLPipeline:
             self._run_model(index=i, train_step=train_step, X=X_pre, y=y)
 
     # инференс отдельно от обучения
-    def predict(self, test_df: pd.DataFrame):
+    def predict(self):
         strategy = self.config.experiment.prediction.strategy
         trained_list = self.results
 
@@ -59,9 +70,9 @@ class MLPipeline:
             print("Predicting for each step...")
 
             for i, trained in enumerate(trained_list):
-                predictions = self._predict_model(test_df, trained)
+                predictions = self._predict_model(self.test_df, trained)
 
-                self._save_predictions(test_df, predictions=predictions, index=i)
+                self._save_predictions(self.test_df, predictions=predictions, index=i)
 
             print("Predictions saved to csv")
 
@@ -78,9 +89,11 @@ class MLPipeline:
                 f"Best step is {best_index}.{best_config.model} with {best_config.get("params")}"
             )
 
-            predictions = self._predict_model(test_df, best_result)
+            predictions = self._predict_model(self.test_df, best_result)
 
-            self._save_predictions(test_df, predictions=predictions, index=best_index)
+            self._save_predictions(
+                self.test_df, predictions=predictions, index=best_index
+            )
 
             print("Predictions saved to csv")
 
@@ -104,32 +117,24 @@ class MLPipeline:
         if model_name not in MODEL_REGISTRY:
             raise ValueError(f"Неизвестная модель '{model_name}' - нет в реестре")
 
-        model_config = self.config.models.get(model_name)
+        model_params = get_model_params(self.config, train_step)
 
-        is_deep = model_config.get("deep_learning") or False
+        print(f"Running ({index}): {model_name} with {model_params}")
 
-        if is_deep:
-            print(f"Running ({index}): {model_name} as deep learning model")
-            # fold_data = run_dnn(self.config, train_step, X, y)
+        if cv:
+            fold_data = self._run_cv(
+                model_name=model_name,
+                model_params=model_params,
+                X=X,
+                y=y,
+            )
         else:
-            model_params = get_model_params(self.config, train_step)
-
-            print(f"Running ({index}): {model_name} with {model_params}")
-
-            if cv:
-                fold_data = self._run_cv(
-                    model_name=model_name,
-                    model_params=model_params,
-                    X=X,
-                    y=y,
-                )
-            else:
-                fold_data = self._run_single_split(
-                    model_name=model_name,
-                    model_params=model_params,
-                    X=X,
-                    y=y,
-                )
+            fold_data = self._run_single_split(
+                model_name=model_name,
+                model_params=model_params,
+                X=X,
+                y=y,
+            )
 
         fold_scores = [x["score"] for x in fold_data]
 
@@ -186,7 +191,7 @@ class MLPipeline:
             X, y, test_size=test_size, random_state=self.config.general.seed, stratify=y
         )
 
-        X_train_tranformed, X_val_transformed, model, preprocess_transformers = (
+        X_train_transformed, X_val_transformed, model, preprocess_transformers = (
             self._prepare_fold(
                 model_name=model_name,
                 model_params=model_params,
@@ -197,10 +202,10 @@ class MLPipeline:
 
         if verbose:
             print(f"Single split: trying to fit model on data")
-            print(X_train_tranformed)
+            print(X_train_transformed)
 
         # тренировка и скоринг
-        model.fit(X_train_tranformed, y_train)
+        model.fit(X_train_transformed, y_train)
 
         fold_score = scorer(model, X_val_transformed, y_val)
 

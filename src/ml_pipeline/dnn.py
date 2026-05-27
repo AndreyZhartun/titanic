@@ -5,50 +5,88 @@ from torch.utils.data import Dataset, DataLoader, random_split
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
+import os
 
 # для адаптации под api sklearn
 from sklearn.base import BaseEstimator, ClassifierMixin
 
 
 # адаптер для DNN с методами fit и transform
+# наследование нужно для того, чтобы класс мог использоваться методами sklearn
 class DNNAdapter(BaseEstimator, ClassifierMixin):
+    best_loss_file_name = "model_best_loss"
+
     def __init__(
         self,
         *,
         # дефолтные параметры нужны для адаптации под sklearn
-        random_state: int = 42,
+        # параметры слоев
+        # входной размер
         in_features: int = 12,
-        learning_rate: float = 0.001,
+        # размеры скрытых слоев
+        hidden_sizes: list[int] = [128, 64],
+        # размеры выходов
+        out_features: int = 2,
+        # параметры сети
+        # вероятность дропаута
+        dropout_rate: float = 0.25,
+        # параметры разбития данных
         batch_size: int = 16,
         test_size: float = 0.2,
+        # параметры обучения
+        learning_rate: float = 0.001,
         epochs: int = 5,
+        # терпение для досрочного прерывания обучения
+        epochs_patience: int = 10,
+        best_loss_threshold_to_save: float = 0.001,
+        # общие параметры
+        random_state: int = 42,
+        save_dir="pytorch_models",
     ) -> None:
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.random_state = random_state
+        self.save_dir = save_dir
 
-        self.dataset = None
-        self.generator = torch.Generator().manual_seed(random_state)
+        sizes = [in_features, *hidden_sizes, out_features]
+        sizes_len = len(sizes)
 
-        hidden_size_1 = 128
-        hidden_size_2 = 64
-        dropout_rate = 0.25
+        # слои нейронки
+        layers = []
 
-        self.model = nn.Sequential(
-            nn.Linear(in_features, out_features=hidden_size_1),
-            nn.BatchNorm1d(hidden_size_1),
-            nn.ReLU(),
-            nn.Dropout(dropout_rate),
-            nn.Linear(hidden_size_1, hidden_size_2),
-            nn.BatchNorm1d(hidden_size_2),
-            nn.ReLU(),
-            nn.Dropout(dropout_rate),
-            nn.Linear(hidden_size_2, 2),
-        )
+        # пройтись по парам размеров, например [12, 128] -> [128, 64] -> [64, 2]
+        for i, size in enumerate(sizes):
+            if i == 0:
+                continue
+
+            # последний слой
+            is_last = i == sizes_len - 1
+            # размер предыдущего слоя
+            prev_size = sizes[i - 1]
+
+            if is_last:
+                layers.append(nn.Linear(prev_size, size))
+                break
+
+            layers.extend(
+                [
+                    nn.Linear(prev_size, size),
+                    nn.BatchNorm1d(size),
+                    nn.ReLU(),
+                    nn.Dropout(dropout_rate),
+                ]
+            )
+
+        self.model = nn.Sequential(*layers)
 
         self.model.to(self.device)
 
+        # другие параметры
         self.test_size = test_size
         self.batch_size = batch_size
         self.epochs = epochs
+        self.epochs_patience = epochs_patience
+        self.best_loss_threshold_to_save = best_loss_threshold_to_save
+        self.learning_rate = learning_rate
 
         self.calc_loss = nn.CrossEntropyLoss()
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=learning_rate)
@@ -59,14 +97,19 @@ class DNNAdapter(BaseEstimator, ClassifierMixin):
 
     def fit(self, X, y):
         dataset = MyDataset(X, y)
+        generator = torch.Generator().manual_seed(self.random_state)
 
         # датасет разбивается на трейн и тест еще раз
         train_data, val_data = random_split(
-            dataset, [1 - self.test_size, self.test_size], generator=self.generator
+            dataset, [1 - self.test_size, self.test_size], generator=generator
         )
 
-        train_loader = DataLoader(train_data, batch_size=self.batch_size, shuffle=True)
-        val_loader = DataLoader(val_data, batch_size=self.batch_size, shuffle=False)
+        train_loader = DataLoader(
+            train_data, batch_size=self.batch_size, shuffle=True, generator=generator
+        )
+        val_loader = DataLoader(
+            val_data, batch_size=self.batch_size, shuffle=False, generator=generator
+        )
 
         train_loss = []
         train_acc = []
@@ -74,9 +117,8 @@ class DNNAdapter(BaseEstimator, ClassifierMixin):
         val_acc = []
         lr_list = []
         best_loss = None
-        best_loss_threshold_to_save = 0.001
+        # кол-во эпох без улучшений лосса
         epochs_without_loss_improve = 0
-        epochs_patience = 20
 
         for epoch in range(self.epochs):
             # отображает прогресс бар
@@ -95,6 +137,10 @@ class DNNAdapter(BaseEstimator, ClassifierMixin):
                 pred = self.model(batch_x)
                 loss = self.calc_loss(pred, batch_y)
 
+                pred_classes = torch.argmax(torch.softmax(pred, dim=1), dim=1).float()
+
+                true_answers += (pred_classes == batch_y.float()).sum().item()
+
                 # backward
                 self.optimizer.zero_grad()
                 loss.backward()
@@ -102,10 +148,6 @@ class DNNAdapter(BaseEstimator, ClassifierMixin):
 
                 running_train_loss.append(loss.item())
                 mean_train_loss = sum(running_train_loss) / len(running_train_loss)
-
-                # print(pred)
-                # print(batch_y)
-                # true_answers += (pred == batch_y).sum().item()
 
                 train_loop.set_description(
                     f"{epoch}/{self.epochs}: mean train loss={mean_train_loss:.4f}"
@@ -156,7 +198,7 @@ class DNNAdapter(BaseEstimator, ClassifierMixin):
             if best_loss is None:
                 best_loss = mean_val_loss
 
-            if mean_val_loss < best_loss - best_loss * best_loss_threshold_to_save:
+            if mean_val_loss < best_loss - best_loss * self.best_loss_threshold_to_save:
                 # обнулить кол-во эпох подряд без улучшения
                 epochs_without_loss_improve = 0
                 # обновить лосс
@@ -165,6 +207,7 @@ class DNNAdapter(BaseEstimator, ClassifierMixin):
                 # torch.save(
                 #     self.model.state_dict(), f"model_state_dict_epoch_{epoch + 1}.pt"
                 # )
+                self._save_state()
                 print(f"epoch {epoch}: saved model with loss {best_loss}")
             else:
                 epochs_without_loss_improve += 1
@@ -175,8 +218,9 @@ class DNNAdapter(BaseEstimator, ClassifierMixin):
             )
 
             # досрочно прервать обучение
-            if epochs_without_loss_improve == epochs_patience:
-                print(f"breaking on epoch {epoch}")
+            if epochs_without_loss_improve == self.epochs_patience:
+                print(f"Breaking on epoch {epoch}; loaded best loss model from file")
+                self._load_state()
                 break
 
     def predict(self, X):
@@ -185,6 +229,37 @@ class DNNAdapter(BaseEstimator, ClassifierMixin):
             X_tensor = torch.tensor(np.array(X), dtype=torch.float32).to(self.device)
             logits = self.model(X_tensor)
             return torch.argmax(logits, dim=1).cpu().numpy()
+
+    def _save_state(self, file_name_postfix=""):
+        try:
+            os.mkdir(self.save_dir)
+        except FileExistsError:
+            pass
+
+        file_path = os.path.join(
+            self.save_dir, f"{DNNAdapter.best_loss_file_name}_{file_name_postfix}.pth"
+        )
+
+        state = {
+            "model": self.model.state_dict(),
+            "calc_loss": self.calc_loss.state_dict(),
+            "optimizer": self.optimizer.state_dict(),
+            "lr_scheduler": self.lr_scheduler.state_dict(),
+        }
+
+        torch.save(state, file_path)
+
+    def _load_state(self, file_name_postfix=""):
+        file_path = os.path.join(
+            self.save_dir, f"{DNNAdapter.best_loss_file_name}_{file_name_postfix}.pth"
+        )
+
+        loaded_state = torch.load(file_path)
+
+        self.model.load_state_dict(loaded_state.get("model"))
+        self.calc_loss.load_state_dict(loaded_state.get("calc_loss"))
+        self.optimizer.load_state_dict(loaded_state.get("optimizer"))
+        self.lr_scheduler.load_state_dict(loaded_state.get("lr_scheduler"))
 
 
 # можно еще использовать TensorDataset

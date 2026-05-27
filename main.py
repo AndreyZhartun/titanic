@@ -1,5 +1,10 @@
-def main():
-    pass
+from ml_pipeline.pipeline import MLPipeline
 
-if __name__ == '__main__':
+
+def main():
+    pipeline = MLPipeline()
+    pipeline.run()
+
+
+if __name__ == "__main__":
     main()

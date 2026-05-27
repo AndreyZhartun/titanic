@@ -10,9 +10,11 @@ config = {
     "paths": {
         "train": "data/train.csv", 
         "test": "data/test.csv",
-        "submissions_dir": "submissions"
+        "submissions_dir": "submissions",
+        "pytorch_models_dir": "pytorch_models"
     },
     "data": {
+        "index_col": "PassengerId",
         "target_col": "Survived"
     },
     "training": {
@@ -136,13 +138,23 @@ config = {
         "dnn": {
             "preprocessing": "default",
             "params": {
+                # nn layers
                 "in_features": 12,
-                "epochs": 100,
+                "hidden_sizes": [128, 64],
+                "out_features": 2,
+                # nn params
+                "dropout_rate": 0.25,
+                # data split params
                 "batch_size": 16,
+                "test_size": "${split.test_size}",
+                # training params
+                "epochs": 100,
                 "learning_rate": "${training.learning_rate}",
+                "epochs_patience": 10,
+                "best_loss_threshold_to_save": 0.001,
+                # general params
                 "random_state": "${general.seed}",
-                # 
-                "test_size": "${split.test_size}"
+                "save_dir": "${paths.pytorch_models_dir}"
             }
         }
     },
