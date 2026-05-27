@@ -11,6 +11,8 @@ cd titanic
 # .myvenv/Scripts/activate
 pip install -e .
 ```
+Зависимости см. в pyproject.toml
+
 #### Запуск обучения и предсказаний
 
 ```
