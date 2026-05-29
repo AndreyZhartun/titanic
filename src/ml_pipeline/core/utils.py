@@ -7,7 +7,7 @@ from pathlib import Path
 import datetime
 import os
 
-from ml_pipeline.preprocessing import TRANSFORMER_REGISTRY
+from ml_pipeline.core.preprocessing import TRANSFORMER_REGISTRY
 
 
 def set_seed(seed: int):
@@ -20,8 +20,11 @@ def build_transformers(model_config: dict, config) -> list:
     """
     Собрать пошаговый список препроцессоров
     """
+    # список объектов препроцессоров
     transformers = []
 
+    # список препроцессоров: для каждого имя и параметры
+    # по этому списку собирается список объектов
     preprocessing_steps = []
 
     model_preprocessing_type = model_config.get("preprocessing")
@@ -32,7 +35,8 @@ def build_transformers(model_config: dict, config) -> list:
     else:
         preprocessing_steps = config.preprocessing.default
 
-    registry = config.preprocessing.registry
+    # реестр дефолтных параметров для препроцессоров
+    default_params_registry = config.preprocessing.registry
 
     for step in preprocessing_steps:
 
@@ -42,19 +46,19 @@ def build_transformers(model_config: dict, config) -> list:
             raise ValueError(f"Неизвестный препроцессор '{name}' - нет в реестре")
 
         # дефолтные параметры препроцессора из реестра
-        default_params = registry.get(name) or {}
+        default_params = default_params_registry.get(name) or {}
         # кастомные параметры препроцессора из эксперимента
         custom_params = step.get(name) or {}
 
-        merged = {}
+        merged_params = {}
 
         # влить конфиги вместе, кастомные параметры перезаписывают дефолтные при наличии
         if default_params or custom_params:
-            merged = {**default_params, **custom_params}
+            merged_params = {**default_params, **custom_params}
 
         # передавать конфиг только если в нем есть параметры
-        if len(merged.items()):
-            transformers.append(TRANSFORMER_REGISTRY[name](**merged))
+        if len(merged_params.items()):
+            transformers.append(TRANSFORMER_REGISTRY[name](**merged_params))
         else:
             transformers.append(TRANSFORMER_REGISTRY[name]())
 
@@ -78,13 +82,16 @@ def apply_transformers(
 
 
 def get_model_params(config, train_step):
+    """
+    Получить гиперпараметры модели
+    """
     model_name = train_step.get("model")
 
     model_config = config.models.get(model_name)
 
-    # дефолтные параметры из реестра
+    # дефолтные параметры из models
     default_model_params = model_config.get("params") or {}
-    # кастомные параметры из конфига, переданного в пайплайн
+    # кастомные параметры из шага эксперимента пайплайна
     custom_model_params = train_step.get("params") or {}
 
     # влить конфиги вместе, кастомные параметры перезаписывают дефолтные при наличии

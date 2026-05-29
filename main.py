@@ -1,8 +1,9 @@
-from ml_pipeline.pipeline import MLPipeline
+from ml_pipeline.classification.pipeline import ClassificationPipeline
 
 
 def main():
-    pipeline = MLPipeline()
+    pipeline = ClassificationPipeline()
+
     pipeline.run()
     pipeline.predict()
 

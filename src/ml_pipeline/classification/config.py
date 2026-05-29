@@ -1,28 +1,41 @@
 from omegaconf import OmegaConf
 
 # fmt: off
-config = {
+classification_config = {
     "general": {
+        # название, записывается в названия файлов предсказаний
         "experiment_name": "lin&tree", 
+        # сид
         "seed": 42,
+        # выводить больше логов в консоль
         "verbose": False
     },
     "paths": {
+        # путь к трейн датасету
         "train": "data/train.csv", 
+        # путь к тест датасету
         "test": "data/test.csv",
+        # путь к папке сохранения предсказания
         "submissions_dir": "submissions",
+        # путь к папке сохранения моделей pytorch
         "pytorch_models_dir": "pytorch_models"
     },
     "data": {
+        # колонка индекса (можно не указывать)
         "index_col": "PassengerId",
+        # колонка таргет
         "target_col": "Survived"
     },
     "training": {
+        # стандартный lr
         "learning_rate": 0.1,
+        # стандартная глубина дерева для бустингов
         "boosting_tree_depth": 6,
     },
     "split": {
+        # true - включена кросс-валидация вместо одиночного сплита
         "cv": True,
+        # true - перемешивать трейн и тест датасеты
         "shuffle": True,
         # если cv=False, в разбитие на трейн и тест это доля теста
         "test_size": 0.2, 
@@ -30,6 +43,7 @@ config = {
         "n_folds": 5
     },
     "preprocessing": {
+        # дефолтные параметры для каждого препроцессора, передаются в конструктор
         "registry": {
             "feature_adder": {},
             "feature_dropper": {
@@ -46,9 +60,12 @@ config = {
                 "mm_cols": ["Ticket_Type"]
             }
         },
+        # дефолтный список препроцессоров, применяется, если в конфиге модели preprocessing: default
         "default": [
             {
                 "name": "feature_adder"
+                # тут еще можно указать params, они переопределят параметры из preprocesing.registry
+                # "params": {}
             },
             {
                 "name": "imputer"
@@ -67,16 +84,26 @@ config = {
             }
         ]
     },
+    # дефолтные гиперпараметры для каждой модели
     "models": {
+        # название должно быть таким же, какое оно в реестре моделей (например в CLASSIFICATION_REGISTRY)
         "dummy": {
+            # значения: default/custom
+            # custom - список препроцессоров берется из preprocessing_steps
             "preprocessing": "custom",
+            # для dummy не нужны препроцессоры, список должен быть в том же формате, что и preprocessing.default
             "preprocessing_steps": [],
+            # все поля внутри params передаются в конструктор класса sklearn
+            # но тут указаны дефолтные гиперпараметры и их можно переопределить в experiment.to_train
             "params": {
                 "strategy": "most_frequent"
             }
         },
         "logistic_regression": {
+            # дефолтный список препроцессоров из preprocessing.default
             "preprocessing": "default",
+            # дефолтные гиперпараметры выбраны перебором
+            # это гиперпараметры, которые показывают лучшие метрики
             "params": {
                 "l1_ratio": 0, 
                 "solver": "lbfgs",
@@ -137,35 +164,47 @@ config = {
         },
         "dnn": {
             "preprocessing": "default",
+            # эти гиперпараметры передаются в конструктор адаптера DNN
             "params": {
-                # nn layers
+                # размер входного слоя
                 "in_features": 12,
+                # скрытые слои, каждый элемент - размер слоя
                 "hidden_sizes": [128, 64],
+                # размер выходного слоя
                 "out_features": 2,
-                # nn params
+                # вероятность дропаута
                 "dropout_rate": 0.25,
-                # data split params
+                # размер батча
                 "batch_size": 16,
+                # размер тестового сплита
                 "test_size": "${split.test_size}",
-                # training params
+                # кол-во эпох (может быть и меньше, если early stopping)
                 "epochs": 100,
+                # скорость обучения
                 "learning_rate": "${training.learning_rate}",
+                # кол-во эпох без улучшения для early stopping
                 "epochs_patience": 10,
+                # порог значимого улучшения лосса для сброса patience
                 "best_loss_threshold_to_save": 0.001,
-                # general params
+                # сид
                 "random_state": "${general.seed}",
+                # директория для сохранения чекпоинтов
                 "save_dir": "${paths.pytorch_models_dir}"
             }
         }
     },
     "experiment": {
+        # метрика, должна быть из списка метрик, которые поддерживаются sklearn.metrics.get_scorer
         "metric": "accuracy",
+        # список независимых шагов экспериментов
         "to_train": [
             {
                 "model": "dummy"
             },
             {
+                # название модели в models
                 "model": "logistic_regression",
+                # если указаны гиперпараметры, то они перезаписывают гиперпараметры из models
                 "params": {
                     "l1_ratio": 0
                 }
@@ -205,10 +244,11 @@ config = {
             # vote - голосование фолдов
             # best - лучший по метрике фолд
             "fold_strategy": "best",
+            # если fold_strategy = vote, это
             # порог положительной классификации для голосования
             "fold_vote_threshold": 0.5
         }
     },
 }
 
-config = OmegaConf.create(config)
+classification_config = OmegaConf.create(classification_config)

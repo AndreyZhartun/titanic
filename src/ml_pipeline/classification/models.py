@@ -6,9 +6,9 @@ from sklearn.ensemble import RandomForestClassifier
 from catboost import CatBoostClassifier
 from lightgbm import LGBMClassifier
 from xgboost import XGBClassifier
-from ml_pipeline.dnn import DNNAdapter
+from ml_pipeline.classification.dnn import DNNAdapter
 
-MODEL_REGISTRY = {
+CLASSIFICATION_REGISTRY = {
     "dummy": DummyClassifier,
     "logistic_regression": LogisticRegression,
     "knn": KNeighborsClassifier,

@@ -2,12 +2,11 @@ import pandas as pd
 import numpy as np
 
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
-from sklearn.pipeline import Pipeline
 
 
 class FeatureAdder:
     """
-    Class to add basic features
+    Класс добавления базовых фичей
     """
 
     def __init__(self) -> None:
@@ -46,9 +45,9 @@ class FeatureAdder:
         # все другие титулы просто Other
         df.loc[~df["Initial"].isin(["Mr", "Miss", "Mrs"]), "Initial"] = "Other"
 
-        # family size
+        # размер семьи
         df["Family_Size"] = df["Parch"] + df["SibSp"]
-        # alone - 1 if no family
+        # alone - 1 если нет семьи
         df["Alone"] = 0
         df.loc[df.Family_Size == 0, "Alone"] = 1
 
@@ -66,7 +65,7 @@ class FeatureAdder:
 
 class FeatureDropper:
     """
-    Class to drop unneeded features
+    Класс удаления фичей
     """
 
     def __init__(self, columns: list[str]) -> None:
@@ -85,19 +84,23 @@ class FeatureDropper:
 
 
 class Imputer:
+    """
+    Класс замещения пустых значений фичей
+    """
+
     def __init__(self) -> None:
         self.mean_ages_by_initials = {}
         self.Embarked_mode = ""
         self.Fare_mean = 0
 
     def fit(self, df: pd.DataFrame):
-        # fill Age using average for Initial
+        # заполнить Age средним по Initial
         self.mean_ages_by_initials = df.groupby("Initial").Age.mean().round()
 
-        # get mode for Embarked
+        # получить моду для Embarked
         self.Embarked_mode = df.Embarked.mode()[0]
 
-        # get mean for Fare
+        # получить среднее для  Fare
         self.Fare_mean = df.Fare.mean()
 
         return self
@@ -110,16 +113,20 @@ class Imputer:
                 self.mean_ages_by_initials[initial]
             )
 
-        # fill with mode
+        # заполнение модой
         df.fillna({"Embarked": self.Embarked_mode}, inplace=True)
 
-        # fill with mean
+        # заполнение средним
         df.fillna({"Fare": self.Fare_mean}, inplace=True)
 
         return df
 
 
 class CatEncoder:
+    """
+    Кодировка категориальных
+    """
+
     def __init__(self) -> None:
         pass
 
@@ -142,13 +149,17 @@ class CatEncoder:
 
 
 class ContEncoder:
+    """
+    Кодировка непрерывных
+    """
+
     def __init__(self) -> None:
         self.age_bins = []
         self.fare_bins = []
         pass
 
     def fit(self, df: pd.DataFrame):
-        # remember bins from train to use on test
+        # запомнить бины из train, чтобы потом использовать на test
         age_bin_data = pd.cut(df["Age"], bins=5, retbins=True)
         # inf добавляется, чтобы данные из теста, выходящие за границы бинов, не были NaN
         self.age_bins = [-np.inf, *age_bin_data[1], np.inf]
@@ -161,7 +172,7 @@ class ContEncoder:
     def transform(self, input_df: pd.DataFrame):
         df = input_df.copy()
 
-        # groups from 0 to 4 for Age (continous Age to categorical Age_group)
+        # непрерывный Age в категориальный Age_group
         df["Age_Group"] = pd.cut(
             df["Age"], bins=self.age_bins, labels=range(0, len(self.age_bins) - 1)
         )
@@ -179,6 +190,10 @@ class ContEncoder:
 
 
 class Scaler:
+    """
+    Стандартный и минмакс скейлер
+    """
+
     def __init__(self, *, num_cols: list[str], mm_cols: list[str]) -> None:
         self.num_cols = num_cols
         self.mm_cols = mm_cols
@@ -208,16 +223,7 @@ class Scaler:
         return df
 
 
-class OpenFEAdapter:
-    def __init__(self) -> None:
-        pass
-
-    def fit(self, train_df: pd.DataFrame, test: pd.Series):
-        pass
-
-
-# Registry
-# maps the "name" string from config.py to the transformer class
+# Реестр, маппит "name" из конфига к классу препроцессора
 TRANSFORMER_REGISTRY: dict = {
     "feature_adder": FeatureAdder,
     "imputer": Imputer,
