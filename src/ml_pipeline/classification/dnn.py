@@ -14,12 +14,13 @@ from sklearn.base import BaseEstimator, ClassifierMixin
 # адаптер для DNN с методами fit и transform
 # наследование нужно для того, чтобы класс мог использоваться методами sklearn
 class DNNAdapter(BaseEstimator, ClassifierMixin):
+    # название файла модели с лучшим лоссом
     best_loss_file_name = "model_best_loss"
 
     def __init__(
         self,
         *,
-        # дефолтные параметры нужны для адаптации под sklearn
+        # дефолтные параметры нужны для адаптации под sklearn, описания см. также в конфиге
         # параметры слоев
         # входной размер
         in_features: int = 12,
@@ -95,20 +96,28 @@ class DNNAdapter(BaseEstimator, ClassifierMixin):
             self.optimizer, mode="min", factor=0.1, patience=5
         )
 
-    def fit(self, X, y):
-        dataset = MyDataset(X, y)
-        generator = torch.Generator().manual_seed(self.random_state)
+        # датасет с данными валидации, они сохраняются там перед fit, потому что сплит происходит перед передачей данных в fit
+        self.val_dataset = None
 
-        # датасет разбивается на трейн и тест еще раз
-        train_data, val_data = random_split(
-            dataset, [1 - self.test_size, self.test_size], generator=generator
-        )
+    def fit(self, X, y):
+        if self.val_dataset is None:
+            raise ValueError(
+                "Валидационный датасет в fit пустой, используйте _set_val_data перед вызовом fit"
+            )
+
+        train_data = MyDataset(X, y)
+        val_data = self.val_dataset
+
+        generator = torch.Generator().manual_seed(self.random_state)
 
         train_loader = DataLoader(
             train_data, batch_size=self.batch_size, shuffle=True, generator=generator
         )
         val_loader = DataLoader(
-            val_data, batch_size=self.batch_size, shuffle=False, generator=generator
+            self.val_dataset,
+            batch_size=self.batch_size,
+            shuffle=False,
+            generator=generator,
         )
 
         train_loss = []
@@ -204,9 +213,6 @@ class DNNAdapter(BaseEstimator, ClassifierMixin):
                 # обновить лосс
                 best_loss = mean_val_loss
 
-                # torch.save(
-                #     self.model.state_dict(), f"model_state_dict_epoch_{epoch + 1}.pt"
-                # )
                 self._save_state()
                 print(f"epoch {epoch}: saved model with loss {best_loss}")
             else:
@@ -230,7 +236,14 @@ class DNNAdapter(BaseEstimator, ClassifierMixin):
             logits = self.model(X_tensor)
             return torch.argmax(logits, dim=1).cpu().numpy()
 
+    def _set_val_data(self, X, y):
+        self.val_dataset = MyDataset(X, y)
+
     def _save_state(self, file_name_postfix=""):
+        """
+        Сохранить состояние модели и обучения в файл
+        """
+
         try:
             os.mkdir(self.save_dir)
         except FileExistsError:
@@ -250,6 +263,10 @@ class DNNAdapter(BaseEstimator, ClassifierMixin):
         torch.save(state, file_path)
 
     def _load_state(self, file_name_postfix=""):
+        """
+        Загрузить состояние модели и обучения из файла
+        """
+
         file_path = os.path.join(
             self.save_dir, f"{DNNAdapter.best_loss_file_name}_{file_name_postfix}.pth"
         )

@@ -127,9 +127,6 @@ class MLPipeline(ABC):
         Прогнать один шаг эксперимента из списка
         """
 
-        # true - использовать кросс-валидацию
-        cv = self.config.split.cv
-
         # для каждого фолда сохраняется метрика, модель и препроцессоры
         # чтобы можно было взять любой фолд, применить именно его препроцессоры к тесту и предсказать в модели
         fold_data = []
@@ -140,6 +137,19 @@ class MLPipeline(ABC):
             raise ValueError(f"Неизвестная модель '{model_name}' - нет в реестре")
 
         model_params = get_model_params(self.config, train_step)
+
+        # true - использовать кросс-валидацию
+        cv = False
+
+        train_step_cv_flag = train_step.get("cv")
+        print(train_step)
+
+        # флаг cv может быть отключен для конкретного шага
+        if isinstance(train_step_cv_flag, bool):
+            cv = train_step_cv_flag
+        else:
+            # если флаг cv для шага не указан, использовать дефолтный флаг
+            cv = self.config.split.cv
 
         print(f"Шаг ({index}): {model_name} с {model_params}")
 
@@ -179,7 +189,9 @@ class MLPipeline(ABC):
             }
         )
 
-    def _prepare_fold(self, *, model_name: str, model_params: dict, X_train, X_test):
+    def _prepare_fold(
+        self, *, model_name: str, model_params: dict, X_train, X_test, y_test
+    ):
         """
         Подготовить трейн/тест данные и модель фолда, также вернуть список примененных препроцессоров
         """
@@ -202,6 +214,13 @@ class MLPipeline(ABC):
 
         # создание объекта модели
         model = ModelClass(**model_params)
+
+        set_val_data_before_fit = model_config.get("set_val_data_before_fit") or False
+
+        # DNN делает валидацию в цикле обучения, так что нужно, чтобы данные валидации были переданы до fit
+        if set_val_data_before_fit:
+            model._set_val_data(X_test_transformed, y_test)
+            print("Данные валидации переданы в модель до fit")
 
         return (X_train_transformed, X_test_transformed, model, preprocess_transformers)
 
@@ -230,6 +249,7 @@ class MLPipeline(ABC):
                 model_params=model_params,
                 X_train=X_train,
                 X_test=X_val,
+                y_test=y_val,
             )
         )
 
@@ -287,6 +307,7 @@ class MLPipeline(ABC):
                     model_params=model_params,
                     X_train=X_fold_train,
                     X_test=X_fold_val,
+                    y_test=y_fold_val,
                 )
             )
 
