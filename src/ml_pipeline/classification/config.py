@@ -47,42 +47,75 @@ classification_config = {
     "preprocessing": {
         # дефолтные параметры для каждого препроцессора, передаются в конструктор
         "registry": {
-            "feature_adder": {},
-            "feature_dropper": {
+            "base_col_dropper": {
                 # дропнуть name, ticket, cabin, initial - не можем вытащить инфу из этих фичей
                 # дропнуть embarked - будем использовать one-hot
                 # дропнуть age и fare потому что будем использовать bin-ы вместо непрерывных фич
                 "columns": ["Name", "Ticket", "Cabin", "Initial", "Embarked", "Age", "Fare"]
             },
-            "imputer": {},
-            "cat_encoder": {},
-            "cont_encoder": {},
-            "scaler": {
-                "num_cols": [],
-                "mm_cols": ["Ticket_Type"]
-            }
+            "base_mean_imputer": {
+                # среднее по Fare, чтобы сделать bin-ы
+                "columns": ["Fare"]
+            },
+            "base_mode_imputer": {
+                # мода по Embarked, потому что это категориальная фича
+                "columns": ["Embarked"]
+            },
+            "base_mapper": {
+                "column": "Sex",
+                "mapping": {
+                    "male": 0,
+                    "female": 1
+                },
+                "dtype": "int"
+            },
+            "base_onehot": {
+                "columns": ["Embarked"],
+                "drop_original": False
+            },
+            "base_bin_encoder": {
+                "columns_bins": {
+                    "Age": 5,
+                    "Fare": 4,
+                }
+            },
+            "base_scaler": {
+                "standard_cols": [],
+                "minmax_cols": ["Ticket_Type"]
+            },
+            "titanic_feature_adder": {},
+            "titanic_age_imputer": {},
         },
         # дефолтный список препроцессоров, применяется, если в конфиге модели preprocessing: default
         "default": [
             {
-                "name": "feature_adder"
+                "name": "titanic_feature_adder"
                 # тут еще можно указать params, они переопределят параметры из preprocesing.registry
                 # "params": {}
             },
             {
-                "name": "imputer"
+                "name": "base_mean_imputer"
             },
             {
-                "name": "cat_encoder"
+                "name": "base_mode_imputer"
             },
             {
-                "name": "cont_encoder"
+                "name": "titanic_age_imputer"
             },
             {
-                "name": "feature_dropper"
+                "name": "base_mapper",
             },
             {
-                "name": "scaler"
+                "name": "base_onehot",
+            },
+            {
+                "name": "base_bin_encoder",
+            },
+            {
+                "name": "base_col_dropper"
+            },
+            {
+                "name": "base_scaler"
             }
         ]
     },

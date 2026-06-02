@@ -47,17 +47,14 @@ regression_config = {
     "preprocessing": {
         # дефолтные параметры для каждого препроцессора, передаются в конструктор
         "registry": {
-            "feature_adder": {},
-            "feature_dropper": {
+            "base_col_dropper": {
                 "columns": []
             },
-            "imputer": {
-                "cols": ["LotFrontage", "GarageYrBlt", "MasVnrArea"]
+            "base_mean_imputer": {
+                "columns": ["LotFrontage", "GarageYrBlt", "MasVnrArea"]
             },
-            "cat_encoder": {},
-            "cont_encoder": {},
-            "one_hot": {
-                "cols": [
+            "base_onehot": {
+                "columns": [
                     "MSZoning",
                     "Street",
                     "Alley",
@@ -103,8 +100,8 @@ regression_config = {
                     "SaleCondition",
                 ]
             },
-            "scaler": {
-                "num_cols": [
+            "base_scaler": {
+                "standard_cols": [
                     "MSSubClass",
                     "LotFrontage",
                     "LotArea",
@@ -142,7 +139,10 @@ regression_config = {
                     "MoSold",
                     "YrSold",
                 ],
-                "mm_cols": []
+                "minmax_cols": []
+            },
+            "log_transformer": {
+                "columns": []
             }
         },
         # дефолтный список препроцессоров, применяется, если в конфиге модели preprocessing: default
@@ -153,19 +153,13 @@ regression_config = {
             #     # "params": {}
             # },
             {
-                "name": "imputer"
+                "name": "base_mean_imputer"
             },
             {
-                "name": "one_hot"
+                "name": "base_onehot"
             },
-            # {
-            #     "name": "cont_encoder"
-            # },
-            # {
-            #     "name": "feature_dropper"
-            # },
             {
-                "name": "scaler"
+                "name": "base_scaler"
             }
         ]
     },
@@ -190,8 +184,8 @@ regression_config = {
             # дефолтные гиперпараметры выбраны перебором
             # это гиперпараметры, которые показывают лучшие метрики
             "params": {
-                "l1_ratio": 0, 
-                "solver": "lbfgs",
+                "alpha": 1.0, 
+                "solver": "auto",
                 "max_iter": 500
             },
         },
@@ -294,7 +288,7 @@ regression_config = {
                 "model": "logistic_regression",
                 # если указаны гиперпараметры, то они перезаписывают гиперпараметры из models
                 "params": {
-                    "l1_ratio": 0
+                    "alpha": 1.0
                 }
             },
             # {

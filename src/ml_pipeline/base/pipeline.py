@@ -7,6 +7,7 @@ import pandas as pd
 from sklearn.model_selection import StratifiedKFold, KFold, train_test_split
 from sklearn.metrics import get_scorer
 
+from ml_pipeline.base.base_preprocessors import BASE_PREPROCESSORS
 from ml_pipeline.base.utils import (
     build_transformers,
     apply_transformers,
@@ -31,13 +32,15 @@ class MLPipeline(ABC):
         # реестр моделей для этого пайплайна
         self.model_registry = model_registry
         # реестр препроцессоров для этого пайплайна
-        self.preprocessor_registry = preprocessor_registry
+        self.preprocessor_registry = BASE_PREPROCESSORS
+
+        # дополнительные препроцессоры, специфические для датасета
+        if preprocessor_registry:
+            self.preprocessor_registry = {**BASE_PREPROCESSORS, **preprocessor_registry}
+
         # результаты каждого эксперимента: список фолдов, индекс лучшего фолда, среднее и std по фолдам
         # для каждого фолда еще сохраняется метрика, модель, список препроцессоров
         self.results: list = []
-
-        # установка сида
-        set_seed(self.config.general.seed)
 
         # загрузка данных
         index_col = self.config.data.index_col
@@ -56,6 +59,9 @@ class MLPipeline(ABC):
         """
         Запустить обучение моделей
         """
+
+        # установка сида
+        set_seed(self.config.general.seed)
 
         self.reset()
 

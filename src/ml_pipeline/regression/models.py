@@ -1,5 +1,5 @@
 from sklearn.dummy import DummyRegressor
-from sklearn.linear_model import LinearRegression
+from sklearn.linear_model import Ridge
 from sklearn.neighbors import KNeighborsRegressor
 from sklearn.tree import DecisionTreeRegressor
 from sklearn.ensemble import RandomForestRegressor
@@ -10,7 +10,7 @@ from ml_pipeline.classification.dnn import DNNAdapter
 
 REGRESSION_MODELS = {
     "dummy": DummyRegressor,
-    "logistic_regression": LinearRegression,
+    "logistic_regression": Ridge,
     "knn": KNeighborsRegressor,
     "decision_tree": DecisionTreeRegressor,
     "random_forest": RandomForestRegressor,

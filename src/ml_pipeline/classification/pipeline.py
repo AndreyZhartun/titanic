@@ -2,19 +2,19 @@ from ml_pipeline.base.pipeline import MLPipeline
 
 from ml_pipeline.classification.models import CLASSIFICATION_MODELS
 from ml_pipeline.classification.config import classification_config
-from ml_pipeline.classification.preprocessing import CLASSIFICATION_PREPROCESSORS
+from ml_pipeline.classification.titanic_preprocessing import TITANIC_PREPROCESSORS
 
 import numpy as np
 
 
-# класс пайплайна для классификации
+# класс пайплайна для классификации (титаник)
 class ClassificationPipeline(MLPipeline):
     def __init__(self, config=None):
 
         super().__init__(
             config=config or classification_config,
             model_registry=CLASSIFICATION_MODELS,
-            preprocessor_registry=CLASSIFICATION_PREPROCESSORS,
+            preprocessor_registry=TITANIC_PREPROCESSORS,
         )
 
     def calc_fold_vote_prediction(self, fold_predictions):
