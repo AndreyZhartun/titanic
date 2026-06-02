@@ -211,11 +211,63 @@ regression_config = {
             },
         },
         "catboost": {
-            "preprocessing": "default",
+            "preprocessing": "custom",
+            "preprocessing_steps": [
+                {
+                    "name": "base_mean_imputer"
+                },
+                {
+                    "name": "base_scaler"
+                }
+            ],
             "params": {
                 "iterations": 300,
                 "depth": "${training.boosting_tree_depth}",
-                "cat_features": ["Sex", "Pclass", "SibSp", "Parch", "Alone", "Age_Group", "Fare_Range"],
+                "cat_features": [
+                    "MSZoning",
+                    "Street",
+                    "Alley",
+                    "LotShape",
+                    "LandContour",
+                    "Utilities",
+                    "LotConfig",
+                    "LandSlope",
+                    "Neighborhood",
+                    "Condition1",
+                    "Condition2",
+                    "BldgType",
+                    "HouseStyle",
+                    "RoofStyle",
+                    "RoofMatl",
+                    "Exterior1st",
+                    "Exterior2nd",
+                    "MasVnrType",
+                    "ExterQual",
+                    "ExterCond",
+                    "Foundation",
+                    "BsmtQual",
+                    "BsmtCond",
+                    "BsmtExposure",
+                    "BsmtFinType1",
+                    "BsmtFinType2",
+                    "Heating",
+                    "HeatingQC",
+                    "CentralAir",
+                    "Electrical",
+                    "KitchenQual",
+                    "Functional",
+                    "FireplaceQu",
+                    "GarageType",
+                    "GarageFinish",
+                    "GarageQual",
+                    "GarageCond",
+                    "PavedDrive",
+                    "PoolQC",
+                    "Fence",
+                    "MiscFeature",
+                    "SaleType",
+                    "SaleCondition",
+                ],
                 "learning_rate": "${training.learning_rate}",
                 "random_state": "${general.seed}",
                 "verbose": 0
@@ -291,27 +343,27 @@ regression_config = {
                     "alpha": 1.0
                 }
             },
-            # {
-            #     "model": "knn",
-            #     "params": {
-            #         "n_neighbors": 3
-            #     }
-            # },
-            # {
-            #     "model": "decision_tree"
-            # },
-            # {
-            #     "model": "random_forest"
-            # },
-            # {
-            #     "model": "catboost"
-            # },
-            # {
-            #     "model": "lightgbm"
-            # },
-            # {
-            #     "model": "xgboost"
-            # },
+            {
+                "model": "knn",
+                "params": {
+                    "n_neighbors": 3
+                }
+            },
+            {
+                "model": "decision_tree"
+            },
+            {
+                "model": "random_forest"
+            },
+            {
+                "model": "catboost"
+            },
+            {
+                "model": "lightgbm"
+            },
+            {
+                "model": "xgboost"
+            },
             # {
             #     "model": "dnn",
             #     # переопределить флаг кросс-валидации для конкретного шага
