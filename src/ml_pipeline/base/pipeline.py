@@ -1,13 +1,13 @@
 """
-pipeline.py — базовый класс полного ML пайплайн
+pipeline.py — базовый класс полного ML пайплайна
 """
 
 import numpy as np
 import pandas as pd
-from sklearn.model_selection import StratifiedKFold, train_test_split
+from sklearn.model_selection import StratifiedKFold, KFold, train_test_split
 from sklearn.metrics import get_scorer
 
-from ml_pipeline.core.utils import (
+from ml_pipeline.base.utils import (
     build_transformers,
     apply_transformers,
     get_model_params,
@@ -24,12 +24,14 @@ class MLPipeline(ABC):
     Этот класс - абстрактный, потому что его объекты напрямую создавать нет смысла
     """
 
-    def __init__(self, *, config, model_registry):
+    def __init__(self, *, config, model_registry, preprocessor_registry):
         # конфиг этого пайплайна
         # может отличаться от дефолтного конфига в рамках конкретного объекта пайплайна, поэтому все поля конфига берутся отсюда
         self.config = config
         # реестр моделей для этого пайплайна
         self.model_registry = model_registry
+        # реестр препроцессоров для этого пайплайна
+        self.preprocessor_registry = preprocessor_registry
         # результаты каждого эксперимента: список фолдов, индекс лучшего фолда, среднее и std по фолдам
         # для каждого фолда еще сохраняется метрика, модель, список препроцессоров
         self.results: list = []
@@ -201,7 +203,11 @@ class MLPipeline(ABC):
         ModelClass = self.model_registry[model_name]
 
         # препроцессоры внутри CV - сборка по train датасету
-        preprocess_transformers = build_transformers(model_config, self.config)
+        preprocess_transformers = build_transformers(
+            preprocessor_registry=self.preprocessor_registry,
+            model_config=model_config,
+            config=self.config,
+        )
 
         # фит и применение препроцессоров на train
         X_train_transformed = apply_transformers(
@@ -238,10 +244,18 @@ class MLPipeline(ABC):
 
         fold_data = []
 
+        split_params = {
+            "test_size": test_size,
+            "random_state": self.config.general.seed,
+        }
+
+        # стратифицировать только если в конфиге указан флаг
+        # например, для регрессии стратифицировать нет смысла
+        if self.config.split.stratify:
+            split_params["stratify"] = y
+
         # стратифицируем по y
-        X_train, X_val, y_train, y_val = train_test_split(
-            X, y, test_size=test_size, random_state=self.config.general.seed, stratify=y
-        )
+        X_train, X_val, y_train, y_val = train_test_split(X, y, **split_params)
 
         X_train_transformed, X_val_transformed, model, preprocess_transformers = (
             self._prepare_fold(
@@ -282,14 +296,23 @@ class MLPipeline(ABC):
         verbose = self.config.general.verbose
         # кол-во фолдов
         n_folds = self.config.split.n_folds
+        # нужна ли стратификация
+        stratify = self.config.split.stratify
 
         scorer = get_scorer(self.config.experiment.metric)
 
-        splitter = StratifiedKFold(
-            n_splits=n_folds,
-            shuffle=self.config.split.shuffle,
-            random_state=self.config.general.seed,
-        )
+        splitter = None
+
+        splitter_params = {
+            "n_splits": n_folds,
+            "shuffle": self.config.split.shuffle,
+            "random_state": self.config.general.seed,
+        }
+
+        if stratify:
+            splitter = StratifiedKFold(**splitter_params)
+        else:
+            splitter = KFold(**splitter_params)
 
         fold_data = []
 

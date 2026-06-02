@@ -1,7 +1,8 @@
-from ml_pipeline.core.pipeline import MLPipeline
+from ml_pipeline.base.pipeline import MLPipeline
 
-from ml_pipeline.classification.models import CLASSIFICATION_REGISTRY
+from ml_pipeline.classification.models import CLASSIFICATION_MODELS
 from ml_pipeline.classification.config import classification_config
+from ml_pipeline.classification.preprocessing import CLASSIFICATION_PREPROCESSORS
 
 import numpy as np
 
@@ -12,7 +13,8 @@ class ClassificationPipeline(MLPipeline):
 
         super().__init__(
             config=config or classification_config,
-            model_registry=CLASSIFICATION_REGISTRY,
+            model_registry=CLASSIFICATION_MODELS,
+            preprocessor_registry=CLASSIFICATION_PREPROCESSORS,
         )
 
     def calc_fold_vote_prediction(self, fold_predictions):

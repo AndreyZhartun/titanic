@@ -7,8 +7,6 @@ from pathlib import Path
 import datetime
 import os
 
-from ml_pipeline.core.preprocessing import TRANSFORMER_REGISTRY
-
 
 def set_seed(seed: int):
     random.seed(seed)
@@ -16,7 +14,7 @@ def set_seed(seed: int):
     torch.manual_seed(seed)
 
 
-def build_transformers(model_config: dict, config) -> list:
+def build_transformers(*, preprocessor_registry, model_config: dict, config) -> list:
     """
     Собрать пошаговый список препроцессоров
     """
@@ -42,7 +40,7 @@ def build_transformers(model_config: dict, config) -> list:
 
         name = step["name"]
 
-        if name not in TRANSFORMER_REGISTRY:
+        if name not in preprocessor_registry:
             raise ValueError(f"Неизвестный препроцессор '{name}' - нет в реестре")
 
         # дефолтные параметры препроцессора из реестра
@@ -58,9 +56,9 @@ def build_transformers(model_config: dict, config) -> list:
 
         # передавать конфиг только если в нем есть параметры
         if len(merged_params.items()):
-            transformers.append(TRANSFORMER_REGISTRY[name](**merged_params))
+            transformers.append(preprocessor_registry[name](**merged_params))
         else:
-            transformers.append(TRANSFORMER_REGISTRY[name]())
+            transformers.append(preprocessor_registry[name]())
 
     return transformers
 

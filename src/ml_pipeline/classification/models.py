@@ -8,7 +8,7 @@ from lightgbm import LGBMClassifier
 from xgboost import XGBClassifier
 from ml_pipeline.classification.dnn import DNNAdapter
 
-CLASSIFICATION_REGISTRY = {
+CLASSIFICATION_MODELS = {
     "dummy": DummyClassifier,
     "logistic_regression": LogisticRegression,
     "knn": KNeighborsClassifier,

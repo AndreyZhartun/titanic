@@ -1,10 +1,10 @@
 from omegaconf import OmegaConf
 
 # fmt: off
-classification_config = {
+regression_config = {
     "general": {
         # название, записывается в названия файлов предсказаний
-        "experiment_name": "lin&tree", 
+        "experiment_name": "house_prices_start", 
         # сид
         "seed": 42,
         # выводить больше логов в консоль
@@ -12,9 +12,9 @@ classification_config = {
     },
     "paths": {
         # путь к трейн датасету
-        "train": "data/train.csv", 
+        "train": "data/house_prices/train_with_log_target.csv", 
         # путь к тест датасету
-        "test": "data/test.csv",
+        "test": "data/house_prices/test.csv",
         # путь к папке сохранения предсказания
         "submissions_dir": "submissions",
         # путь к папке сохранения моделей pytorch
@@ -22,9 +22,9 @@ classification_config = {
     },
     "data": {
         # колонка индекса (можно не указывать)
-        "index_col": "PassengerId",
+        "index_col": "Id",
         # колонка таргет
-        "target_col": "Survived"
+        "target_col": "SalePrice_Log"
     },
     "training": {
         # стандартный lr
@@ -38,7 +38,7 @@ classification_config = {
         # true - перемешивать трейн и тест датасеты
         "shuffle": True,
         # true - стратифицировать при сплите
-        "stratify": True,
+        "stratify": False,
         # если cv=False, в разбитие на трейн и тест это доля теста
         "test_size": 0.2, 
         # если cv=True, это количество фолдов
@@ -49,38 +49,121 @@ classification_config = {
         "registry": {
             "feature_adder": {},
             "feature_dropper": {
-                # дропнуть name, ticket, cabin, initial - не можем вытащить инфу из этих фичей
-                # дропнуть embarked - будем использовать one-hot
-                # дропнуть age и fare потому что будем использовать bin-ы вместо непрерывных фич
-                "columns": ["Name", "Ticket", "Cabin", "Initial", "Embarked", "Age", "Fare"]
+                "columns": []
             },
-            "imputer": {},
+            "imputer": {
+                "cols": ["LotFrontage", "GarageYrBlt", "MasVnrArea"]
+            },
             "cat_encoder": {},
             "cont_encoder": {},
+            "one_hot": {
+                "cols": [
+                    "MSZoning",
+                    "Street",
+                    "Alley",
+                    "LotShape",
+                    "LandContour",
+                    "Utilities",
+                    "LotConfig",
+                    "LandSlope",
+                    "Neighborhood",
+                    "Condition1",
+                    "Condition2",
+                    "BldgType",
+                    "HouseStyle",
+                    "RoofStyle",
+                    "RoofMatl",
+                    "Exterior1st",
+                    "Exterior2nd",
+                    "MasVnrType",
+                    "ExterQual",
+                    "ExterCond",
+                    "Foundation",
+                    "BsmtQual",
+                    "BsmtCond",
+                    "BsmtExposure",
+                    "BsmtFinType1",
+                    "BsmtFinType2",
+                    "Heating",
+                    "HeatingQC",
+                    "CentralAir",
+                    "Electrical",
+                    "KitchenQual",
+                    "Functional",
+                    "FireplaceQu",
+                    "GarageType",
+                    "GarageFinish",
+                    "GarageQual",
+                    "GarageCond",
+                    "PavedDrive",
+                    "PoolQC",
+                    "Fence",
+                    "MiscFeature",
+                    "SaleType",
+                    "SaleCondition",
+                ]
+            },
             "scaler": {
-                "num_cols": [],
-                "mm_cols": ["Ticket_Type"]
+                "num_cols": [
+                    "MSSubClass",
+                    "LotFrontage",
+                    "LotArea",
+                    "OverallQual",
+                    "OverallCond",
+                    "YearBuilt",
+                    "YearRemodAdd",
+                    "MasVnrArea",
+                    "BsmtFinSF1",
+                    "BsmtFinSF2",
+                    "BsmtUnfSF",
+                    "TotalBsmtSF",
+                    "1stFlrSF",
+                    "2ndFlrSF",
+                    "LowQualFinSF",
+                    "GrLivArea",
+                    "BsmtFullBath",
+                    "BsmtHalfBath",
+                    "FullBath",
+                    "HalfBath",
+                    "BedroomAbvGr",
+                    "KitchenAbvGr",
+                    "TotRmsAbvGrd",
+                    "Fireplaces",
+                    "GarageYrBlt",
+                    "GarageCars",
+                    "GarageArea",
+                    "WoodDeckSF",
+                    "OpenPorchSF",
+                    "EnclosedPorch",
+                    "3SsnPorch",
+                    "ScreenPorch",
+                    "PoolArea",
+                    "MiscVal",
+                    "MoSold",
+                    "YrSold",
+                ],
+                "mm_cols": []
             }
         },
         # дефолтный список препроцессоров, применяется, если в конфиге модели preprocessing: default
         "default": [
-            {
-                "name": "feature_adder"
-                # тут еще можно указать params, они переопределят параметры из preprocesing.registry
-                # "params": {}
-            },
+            # {
+            #     "name": "feature_adder"
+            #     # тут еще можно указать params, они переопределят параметры из preprocesing.registry
+            #     # "params": {}
+            # },
             {
                 "name": "imputer"
             },
             {
-                "name": "cat_encoder"
+                "name": "one_hot"
             },
-            {
-                "name": "cont_encoder"
-            },
-            {
-                "name": "feature_dropper"
-            },
+            # {
+            #     "name": "cont_encoder"
+            # },
+            # {
+            #     "name": "feature_dropper"
+            # },
             {
                 "name": "scaler"
             }
@@ -98,7 +181,7 @@ classification_config = {
             # все поля внутри params передаются в конструктор класса sklearn
             # но тут указаны дефолтные гиперпараметры и их можно переопределить в experiment.to_train
             "params": {
-                "strategy": "most_frequent"
+                "strategy": "mean"
             }
         },
         "logistic_regression": {
@@ -200,7 +283,7 @@ classification_config = {
     },
     "experiment": {
         # метрика, должна быть из списка метрик, которые поддерживаются sklearn.metrics.get_scorer
-        "metric": "accuracy",
+        "metric": "neg_root_mean_squared_error",
         # список независимых шагов экспериментов
         "to_train": [
             {
@@ -214,36 +297,36 @@ classification_config = {
                     "l1_ratio": 0
                 }
             },
-            {
-                "model": "knn",
-                "params": {
-                    "n_neighbors": 3
-                }
-            },
-            {
-                "model": "decision_tree"
-            },
-            {
-                "model": "random_forest"
-            },
-            {
-                "model": "catboost"
-            },
-            {
-                "model": "lightgbm"
-            },
-            {
-                "model": "xgboost"
-            },
-            {
-                "model": "dnn",
-                # переопределить флаг кросс-валидации для конкретного шага
-                "cv": False,
-                "params": {
-                    # переопределить lr из training.learning_rate
-                    "learning_rate": 0.001
-                }
-            }
+            # {
+            #     "model": "knn",
+            #     "params": {
+            #         "n_neighbors": 3
+            #     }
+            # },
+            # {
+            #     "model": "decision_tree"
+            # },
+            # {
+            #     "model": "random_forest"
+            # },
+            # {
+            #     "model": "catboost"
+            # },
+            # {
+            #     "model": "lightgbm"
+            # },
+            # {
+            #     "model": "xgboost"
+            # },
+            # {
+            #     "model": "dnn",
+            #     # переопределить флаг кросс-валидации для конкретного шага
+            #     "cv": False,
+            #     "params": {
+            #         # переопределить lr из training.learning_rate
+            #         "learning_rate": 0.001
+            #     }
+            # }
         ],
         "prediction": {
             # each - каждый эксперимент
@@ -254,9 +337,9 @@ classification_config = {
             "fold_strategy": "best",
             # если fold_strategy = vote, это
             # порог положительной классификации для голосования
-            "fold_vote_threshold": 0.5
+            # "fold_vote_threshold": 0.5
         }
     },
 }
 
-classification_config = OmegaConf.create(classification_config)
+regression_config = OmegaConf.create(regression_config)

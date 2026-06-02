@@ -17,50 +17,8 @@ class FeatureAdder:
         return self
 
     def transform(self, input_df: pd.DataFrame):
-        df = input_df.copy()
 
-        df["Initial"] = df["Name"].str.extract("([A-Za-z]+)\\.")
-
-        df.replace(
-            {
-                "Initial": {
-                    "Mlle": "Miss",
-                    "Mme": "Miss",
-                    "Ms": "Miss",
-                    "Dr": "Mr",
-                    "Major": "Mr",
-                    "Lady": "Mrs",
-                    "Countess": "Mrs",
-                    # "Jonkheer": "Other",
-                    # "Col": "Other",
-                    # "Rev": "Other",
-                    "Capt": "Mr",
-                    "Sir": "Mr",
-                    "Don": "Mr",
-                }
-            },
-            inplace=True,
-        )
-
-        # все другие титулы просто Other
-        df.loc[~df["Initial"].isin(["Mr", "Miss", "Mrs"]), "Initial"] = "Other"
-
-        # размер семьи
-        df["Family_Size"] = df["Parch"] + df["SibSp"]
-        # alone - 1 если нет семьи
-        df["Alone"] = 0
-        df.loc[df.Family_Size == 0, "Alone"] = 1
-
-        # 4 и больше родственников
-        df["More_Than_4_relatives"] = 0
-        df.loc[df.Family_Size >= 4, "More_Than_4_relatives"] = 1
-
-        # порядок билета
-        df["Ticket_Type"] = df["Ticket"].apply(lambda x: x[0:3])
-        df["Ticket_Type"] = df["Ticket_Type"].astype("category")
-        df["Ticket_Type"] = df["Ticket_Type"].cat.codes
-
-        return df
+        return input_df
 
 
 class FeatureDropper:
@@ -88,36 +46,20 @@ class Imputer:
     Класс замещения пустых значений фичей
     """
 
-    def __init__(self) -> None:
-        self.mean_ages_by_initials = {}
-        self.Embarked_mode = ""
-        self.Fare_mean = 0
+    def __init__(self, cols) -> None:
+        self.cols = cols
+        self.mean_values = {col: 0 for col in cols}
 
     def fit(self, df: pd.DataFrame):
-        # заполнить Age средним по Initial
-        self.mean_ages_by_initials = df.groupby("Initial").Age.mean().round()
-
-        # получить моду для Embarked
-        self.Embarked_mode = df.Embarked.mode()[0]
-
-        # получить среднее для  Fare
-        self.Fare_mean = df.Fare.mean()
+        self.mean_values = {col: df[col].mean() for col in self.cols}
 
         return self
 
     def transform(self, input_df: pd.DataFrame):
         df = input_df.copy()
 
-        for initial in list(self.mean_ages_by_initials.keys()):
-            df.loc[(df.Age.isnull()) & (df.Initial == initial), "Age"] = (
-                self.mean_ages_by_initials[initial]
-            )
-
-        # заполнение модой
-        df.fillna({"Embarked": self.Embarked_mode}, inplace=True)
-
         # заполнение средним
-        df.fillna({"Fare": self.Fare_mean}, inplace=True)
+        df.fillna(self.mean_values, inplace=True)
 
         return df
 
@@ -146,6 +88,21 @@ class CatEncoder:
         df["Embarked_S"] = embarked_dummies["S"]
 
         return df
+
+
+class OneHotEncoder:
+    def __init__(self, cols) -> None:
+        self.cols = cols
+
+    def fit(self, _: pd.DataFrame):
+        return self
+
+    def transform(self, input_df: pd.DataFrame):
+        df = input_df.copy()
+
+        df = pd.get_dummies(df, columns=self.cols, dtype=int)
+
+        return self
 
 
 class ContEncoder:
@@ -205,6 +162,8 @@ class Scaler:
         df = input_df.copy()
 
         # df[self.num_cols] = self.scaler.fit_transform(df[self.num_cols])
+        self.scaler.fit(df[self.num_cols])
+
         self.mm_scaler.fit(df[self.mm_cols])
 
         return df
@@ -212,11 +171,11 @@ class Scaler:
     def transform(self, input_df: pd.DataFrame):
         df = input_df.copy()
 
-        # df[self.num_cols] = self.scaler.transform(df[self.num_cols])
-
         # хз почему скейлер дублирует колонки вместо того, чтобы заменять их
         # поэтому тут невероятные костыли
-        df = df.drop(columns=self.mm_cols)
+        df = df.drop(columns=[*self.mm_cols, *self.num_cols])
+
+        df[self.num_cols] = self.scaler.transform(df[self.num_cols])
 
         df[self.mm_cols] = self.mm_scaler.transform(input_df[self.mm_cols])
 
@@ -224,11 +183,12 @@ class Scaler:
 
 
 # Реестр, маппит "name" из конфига к классу препроцессора
-TRANSFORMER_REGISTRY: dict = {
+REGRESSION_PREPROCESSORS: dict = {
     "feature_adder": FeatureAdder,
     "imputer": Imputer,
     "feature_dropper": FeatureDropper,
     "cat_encoder": CatEncoder,
     "cont_encoder": ContEncoder,
+    "one_hot": OneHotEncoder,
     "scaler": Scaler,
 }
