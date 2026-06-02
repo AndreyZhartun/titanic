@@ -134,7 +134,7 @@ classification_config = {
                 "strategy": "most_frequent"
             }
         },
-        "logistic_regression": {
+        "linear": {
             # дефолтный список препроцессоров из preprocessing.default
             "preprocessing": "default",
             # дефолтные гиперпараметры выбраны перебором
@@ -241,7 +241,7 @@ classification_config = {
             },
             {
                 # название модели в models
-                "model": "logistic_regression",
+                "model": "linear",
                 # если указаны гиперпараметры, то они перезаписывают гиперпараметры из models
                 "params": {
                     "l1_ratio": 0

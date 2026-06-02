@@ -10,7 +10,7 @@ from ml_pipeline.classification.dnn import DNNAdapter
 
 CLASSIFICATION_MODELS = {
     "dummy": DummyClassifier,
-    "logistic_regression": LogisticRegression,
+    "linear": LogisticRegression,
     "knn": KNeighborsClassifier,
     "decision_tree": DecisionTreeClassifier,
     "random_forest": RandomForestClassifier,

@@ -10,7 +10,7 @@ from ml_pipeline.classification.dnn import DNNAdapter
 
 REGRESSION_MODELS = {
     "dummy": DummyRegressor,
-    "logistic_regression": Ridge,
+    "linear": Ridge,
     "knn": KNeighborsRegressor,
     "decision_tree": DecisionTreeRegressor,
     "random_forest": RandomForestRegressor,
