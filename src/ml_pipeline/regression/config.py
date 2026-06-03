@@ -60,7 +60,7 @@ regression_config = {
         # путь к трейн датасету
         "train": "data/house_prices/train_with_log_target.csv", 
         # путь к тест датасету
-        "test": "data/house_prices/test.csv",
+        "test": "data/house_prices/test_transformed.csv",
         # путь к папке сохранения предсказания
         "submissions_dir": "submissions",
         # путь к папке сохранения моделей pytorch
@@ -156,7 +156,7 @@ regression_config = {
                 "minmax_cols": []
             },
             "log_transformer": {
-                "columns": []
+                "columns": ["MSSubClass", "LotFrontage", "LotArea"]
             }
         },
         # дефолтный список препроцессоров, применяется, если в конфиге модели preprocessing: default
@@ -168,6 +168,9 @@ regression_config = {
             # },
             {
                 "name": "base_mean_imputer"
+            },
+            {
+                "name": "log_transformer"
             },
             {
                 "name": "base_onehot"
@@ -198,8 +201,8 @@ regression_config = {
             # дефолтные гиперпараметры выбраны перебором
             # это гиперпараметры, которые показывают лучшие метрики
             "params": {
-                "alpha": 1.0, 
-                "solver": "auto",
+                "alpha": 1.0,
+                "l1_ratio": 0,
                 "max_iter": 500
             },
         },
@@ -230,6 +233,9 @@ regression_config = {
             "preprocessing_steps": [
                 {
                     "name": "base_mean_imputer"
+                },
+                {
+                    "name": "log_transformer"
                 },
                 {
                     "name": "base_scaler"

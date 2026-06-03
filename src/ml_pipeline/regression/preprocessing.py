@@ -10,7 +10,7 @@ class LogTransformer:
     """
 
     def __init__(self, columns) -> None:
-        self.cols = columns
+        self.columns = columns
         # self.mean_values = {col: 0 for col in cols}
 
     def fit(self, df: pd.DataFrame):
@@ -21,8 +21,9 @@ class LogTransformer:
     def transform(self, input_df: pd.DataFrame):
         df = input_df.copy()
 
-        # заполнение средним
-        # df.fillna(self.mean_values, inplace=True)
+        # логарифмирование фич
+        for col in self.columns:
+            df[col] = np.log(df[col])
 
         return df
 
