@@ -408,6 +408,16 @@ class MLPipeline(ABC):
 
         raise NotImplementedError("Нужно определить функцию для конкретного пайплайна")
 
+    def _transform_predictions(self, predictions):
+        """
+        Трансформировать таргет перед сабмитом.
+        Нужно, если до обучения к таргету применялись какие-то преобразования
+
+        В базовом классе трансформаций нет, но в наследниках могут быть
+        """
+
+        return predictions
+
     def _predict_fold(self, test_df: pd.DataFrame, fold_data):
         """
         Вернуть предсказания для одного фолда
@@ -421,6 +431,8 @@ class MLPipeline(ABC):
         transformed_test_df = apply_transformers(transformers, test_df, fit=False)
 
         predictions = model.predict(transformed_test_df)
+
+        predictions = self._transform_predictions(predictions)
 
         return predictions
 

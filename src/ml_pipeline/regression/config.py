@@ -1,5 +1,51 @@
 from omegaconf import OmegaConf
 
+cat_features = [
+    "MSZoning",
+    "Street",
+    "Alley",
+    "LotShape",
+    "LandContour",
+    "Utilities",
+    "LotConfig",
+    "LandSlope",
+    "Neighborhood",
+    "Condition1",
+    "Condition2",
+    "BldgType",
+    "HouseStyle",
+    "RoofStyle",
+    "RoofMatl",
+    "Exterior1st",
+    "Exterior2nd",
+    "MasVnrType",
+    "ExterQual",
+    "ExterCond",
+    "Foundation",
+    "BsmtQual",
+    "BsmtCond",
+    "BsmtExposure",
+    "BsmtFinType1",
+    "BsmtFinType2",
+    "Heating",
+    "HeatingQC",
+    "CentralAir",
+    "Electrical",
+    "KitchenQual",
+    "Functional",
+    "FireplaceQu",
+    "GarageType",
+    "GarageFinish",
+    "GarageQual",
+    "GarageCond",
+    "PavedDrive",
+    "PoolQC",
+    "Fence",
+    "MiscFeature",
+    "SaleType",
+    "SaleCondition",
+]
+
 # fmt: off
 regression_config = {
     "general": {
@@ -24,7 +70,7 @@ regression_config = {
         # колонка индекса (можно не указывать)
         "index_col": "Id",
         # колонка таргет
-        "target_col": "SalePrice_Log"
+        "target_col": "SalePrice"
     },
     "training": {
         # стандартный lr
@@ -51,54 +97,22 @@ regression_config = {
                 "columns": []
             },
             "base_mean_imputer": {
-                "columns": ["LotFrontage", "GarageYrBlt", "MasVnrArea"]
+                "columns": [
+                    "LotFrontage", 
+                    "GarageYrBlt", 
+                    "MasVnrArea", 
+                    "BsmtFullBath", 
+                    "BsmtHalfBath",
+                    "BsmtFinSF2",
+                    "TotalBsmtSF",
+                    "BsmtUnfSF",
+                    "BsmtFinSF1",
+                    "GarageCars",
+                    "GarageArea"
+                ]
             },
             "base_onehot": {
-                "columns": [
-                    "MSZoning",
-                    "Street",
-                    "Alley",
-                    "LotShape",
-                    "LandContour",
-                    "Utilities",
-                    "LotConfig",
-                    "LandSlope",
-                    "Neighborhood",
-                    "Condition1",
-                    "Condition2",
-                    "BldgType",
-                    "HouseStyle",
-                    "RoofStyle",
-                    "RoofMatl",
-                    "Exterior1st",
-                    "Exterior2nd",
-                    "MasVnrType",
-                    "ExterQual",
-                    "ExterCond",
-                    "Foundation",
-                    "BsmtQual",
-                    "BsmtCond",
-                    "BsmtExposure",
-                    "BsmtFinType1",
-                    "BsmtFinType2",
-                    "Heating",
-                    "HeatingQC",
-                    "CentralAir",
-                    "Electrical",
-                    "KitchenQual",
-                    "Functional",
-                    "FireplaceQu",
-                    "GarageType",
-                    "GarageFinish",
-                    "GarageQual",
-                    "GarageCond",
-                    "PavedDrive",
-                    "PoolQC",
-                    "Fence",
-                    "MiscFeature",
-                    "SaleType",
-                    "SaleCondition",
-                ]
+                "columns": cat_features
             },
             "base_scaler": {
                 "standard_cols": [
@@ -212,6 +226,7 @@ regression_config = {
         },
         "catboost": {
             "preprocessing": "custom",
+            # убрать из препроцессинга one hot (для catboost не рекомендуется)
             "preprocessing_steps": [
                 {
                     "name": "base_mean_imputer"
@@ -223,51 +238,7 @@ regression_config = {
             "params": {
                 "iterations": 300,
                 "depth": "${training.boosting_tree_depth}",
-                "cat_features": [
-                    "MSZoning",
-                    "Street",
-                    "Alley",
-                    "LotShape",
-                    "LandContour",
-                    "Utilities",
-                    "LotConfig",
-                    "LandSlope",
-                    "Neighborhood",
-                    "Condition1",
-                    "Condition2",
-                    "BldgType",
-                    "HouseStyle",
-                    "RoofStyle",
-                    "RoofMatl",
-                    "Exterior1st",
-                    "Exterior2nd",
-                    "MasVnrType",
-                    "ExterQual",
-                    "ExterCond",
-                    "Foundation",
-                    "BsmtQual",
-                    "BsmtCond",
-                    "BsmtExposure",
-                    "BsmtFinType1",
-                    "BsmtFinType2",
-                    "Heating",
-                    "HeatingQC",
-                    "CentralAir",
-                    "Electrical",
-                    "KitchenQual",
-                    "Functional",
-                    "FireplaceQu",
-                    "GarageType",
-                    "GarageFinish",
-                    "GarageQual",
-                    "GarageCond",
-                    "PavedDrive",
-                    "PoolQC",
-                    "Fence",
-                    "MiscFeature",
-                    "SaleType",
-                    "SaleCondition",
-                ],
+                "cat_features": cat_features,
                 "learning_rate": "${training.learning_rate}",
                 "random_state": "${general.seed}",
                 "verbose": 0

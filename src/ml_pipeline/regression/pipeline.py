@@ -17,6 +17,14 @@ class RegressionPipeline(MLPipeline):
             preprocessor_registry=REGRESSION_PREPROCESSORS,
         )
 
+    def _transform_predictions(self, predictions):
+        """
+        Обратить логарифмирование таргета.
+        См. houseprices_eda
+        """
+
+        return np.exp(predictions)
+
     def calc_fold_vote_prediction(self, fold_predictions):
 
         raise NotImplementedError("not implemented")
