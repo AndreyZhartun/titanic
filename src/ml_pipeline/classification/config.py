@@ -214,8 +214,6 @@ classification_config = {
                 "dropout_rate": 0.25,
                 # размер батча
                 "batch_size": 16,
-                # размер тестового сплита
-                "test_size": "${split.test_size}",
                 # кол-во эпох (может быть и меньше, если early stopping)
                 "epochs": 100,
                 # скорость обучения

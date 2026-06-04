@@ -37,7 +37,6 @@ class DNNAdapter(BaseEstimator, ClassifierMixin):
         dropout_rate: float = 0.25,
         # параметры разбития данных
         batch_size: int = 16,
-        test_size: float = 0.2,
         # параметры обучения
         learning_rate: float = 0.001,
         epochs: int = 5,
@@ -86,7 +85,6 @@ class DNNAdapter(BaseEstimator, ClassifierMixin):
         self.model.to(self.device)
 
         # другие параметры
-        self.test_size = test_size
         self.batch_size = batch_size
         self.epochs = epochs
         self.epochs_patience = epochs_patience

@@ -6,7 +6,7 @@ from sklearn.ensemble import RandomForestRegressor
 from catboost import CatBoostRegressor
 from lightgbm import LGBMRegressor
 from xgboost import XGBRegressor
-from ml_pipeline.classification.dnn import DNNAdapter
+from ml_pipeline.regression.houseprices_dnn import DNNRegressorAdapter
 
 REGRESSION_MODELS = {
     "dummy": DummyRegressor,
@@ -21,5 +21,5 @@ REGRESSION_MODELS = {
     "lightgbm": LGBMRegressor,
     "xgboost": XGBRegressor,
     # DNN
-    "dnn": DNNAdapter,
+    "dnn": DNNRegressorAdapter,
 }

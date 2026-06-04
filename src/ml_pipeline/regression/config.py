@@ -290,29 +290,25 @@ regression_config = {
             # эти гиперпараметры передаются в конструктор адаптера DNN
             "params": {
                 # размер входного слоя
-                "in_features": 12,
+                "in_features": 301,
                 # скрытые слои, каждый элемент - размер слоя
-                "hidden_sizes": [128, 64],
+                "hidden_sizes": [512, 256, 64],
                 # размер выходного слоя
-                "out_features": 2,
+                "out_features": 1,
                 # вероятность дропаута
                 "dropout_rate": 0.25,
                 # размер батча
-                "batch_size": 16,
-                # размер тестового сплита
-                "test_size": "${split.test_size}",
+                "batch_size": 32,
                 # кол-во эпох (может быть и меньше, если early stopping)
                 "epochs": 100,
                 # скорость обучения
                 "learning_rate": "${training.learning_rate}",
                 # кол-во эпох без улучшения для early stopping
-                "epochs_patience": 10,
+                "epochs_patience": 20,
                 # порог значимого улучшения лосса для сброса patience
                 "best_loss_threshold_to_save": 0.001,
                 # сид
                 "random_state": "${general.seed}",
-                # директория для сохранения чекпоинтов
-                "save_dir": "${paths.pytorch_models_dir}"
             }
         }
     },
@@ -353,15 +349,15 @@ regression_config = {
             {
                 "model": "xgboost"
             },
-            # {
-            #     "model": "dnn",
-            #     # переопределить флаг кросс-валидации для конкретного шага
-            #     "cv": False,
-            #     "params": {
-            #         # переопределить lr из training.learning_rate
-            #         "learning_rate": 0.001
-            #     }
-            # }
+            {
+                "model": "dnn",
+                # переопределить флаг кросс-валидации для конкретного шага
+                "cv": False,
+                "params": {
+                    # переопределить lr из training.learning_rate
+                    "learning_rate": 0.1
+                }
+            }
         ],
         "prediction": {
             # each - каждый эксперимент
