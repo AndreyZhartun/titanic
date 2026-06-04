@@ -171,7 +171,7 @@ classification_config = {
             "params": {
                 "iterations": 300,
                 "depth": "${training.boosting_tree_depth}",
-                "cat_features": ["Sex", "Pclass", "SibSp", "Parch", "Alone", "Age_Group", "Fare_Range"],
+                "cat_features": ["Sex", "Pclass", "SibSp", "Parch", "Alone", "Age_bin", "Fare_bin"],
                 "learning_rate": "${training.learning_rate}",
                 "random_state": "${general.seed}",
                 "verbose": 0

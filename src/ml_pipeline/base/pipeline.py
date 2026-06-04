@@ -124,6 +124,29 @@ class MLPipeline(ABC):
         else:
             raise ValueError("Неизвестное значение стратегии prediction")
 
+    def show_results(self, show_params=False):
+        if not len(self.results):
+            print("Пайплайн не имеет результатов")
+            return
+
+        print(
+            f"{"Модель (параметры)":<40} | {"Средняя метрика по CV":<21} | {"std метрики по CV":<21}"
+        )
+
+        for i, result in enumerate(self.results):
+            relevant_config = self.config.experiment.to_train[i]
+
+            params_str = (
+                f"{relevant_config.model} ({relevant_config.params})"
+                if show_params
+                else f"{relevant_config.model}"
+            )
+
+            mean = f"{result["cv_mean"]:.6f}"
+            std = f"{result["cv_std"]:.6f}"
+
+            print(f"{params_str:<40} | {mean:<21} | {std:<21}")
+
     def _run_model(
         self,
         index: int,

@@ -107,13 +107,15 @@ class BaseOneHotEncoder:
         columns: list[str],
         # удалять ли исходные колонки
         drop_original: bool = True,
-        # тип значений новых колонок
+        # удалять ли первую колонку
+        drop_first: bool = True,
         dtype=float,
         # словарь {колонка: префикс}. Если None, используется название колонки
         prefix: dict | None = None,
     ) -> None:
         self.columns = columns
         self.drop_original = drop_original
+        self.drop_first = drop_first
         self.dtype = dtype
         self.prefix = prefix or {col: col for col in columns}
         self._encoded_cols: list[str] = []
@@ -122,6 +124,17 @@ class BaseOneHotEncoder:
         dummy_df = pd.get_dummies(
             df[self.columns], dtype=self.dtype, prefix=self.prefix
         )
+
+        if self.drop_first:
+            # дропнуть первую one-hot-колонку для каждой фичи
+            cols_to_drop = [
+                next(
+                    c for c in dummy_df.columns if c.startswith(f"{self.prefix[col]}_")
+                )
+                for col in self.columns
+            ]
+
+            dummy_df = dummy_df.drop(columns=cols_to_drop)
 
         self._encoded_cols = dummy_df.columns.tolist()
 
@@ -145,9 +158,7 @@ class BaseOneHotEncoder:
         if self.drop_original:
             df = df.drop(columns=self.columns)
 
-        df = pd.concat([df, dummy_df], axis=1)
-
-        return df
+        return pd.concat([df, dummy_df], axis=1)
 
 
 class BaseBinEncoder:

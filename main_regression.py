@@ -1,8 +1,8 @@
-from ml_pipeline.classification.pipeline import ClassificationPipeline
+from ml_pipeline.regression.pipeline import RegressionPipeline
 
 
 def main():
-    pipeline = ClassificationPipeline()
+    pipeline = RegressionPipeline()
 
     pipeline.run()
     pipeline.show_results()
