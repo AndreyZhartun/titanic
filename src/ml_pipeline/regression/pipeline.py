@@ -27,4 +27,9 @@ class RegressionPipeline(MLPipeline):
 
     def calc_fold_vote_prediction(self, fold_predictions):
 
-        raise NotImplementedError("not implemented")
+        # сложить предсказания, найти среднее для каждого объекта теста и сравнить с порогом
+        fold_predictions_sum = np.sum(fold_predictions, axis=0)
+
+        predictions = fold_predictions_sum / len(fold_predictions)
+
+        return predictions

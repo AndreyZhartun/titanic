@@ -22,7 +22,7 @@ class DNNRegressorAdapter(BaseEstimator, RegressorMixin):
         self,
         *,
         # по описанию параметров см. также адаптер DNN титаника
-        in_features: int = 301,
+        in_features: int = 258,
         hidden_sizes: list[int] | None = None,
         out_features: int = 1,
         dropout_rate: float = 0.25,
