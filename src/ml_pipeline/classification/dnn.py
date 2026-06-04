@@ -1,3 +1,8 @@
+"""
+Адаптер для DNN с методами fit и transform.
+Обучает нейронную сеть, валидирует и сохраняет лучшую модель в файл
+"""
+
 import torch
 from torch import nn
 from torch.utils.data import Dataset, DataLoader, random_split
@@ -11,7 +16,6 @@ import os
 from sklearn.base import BaseEstimator, ClassifierMixin
 
 
-# адаптер для DNN с методами fit и transform
 # наследование нужно для того, чтобы класс мог использоваться методами sklearn
 class DNNAdapter(BaseEstimator, ClassifierMixin):
     # название файла модели с лучшим лоссом

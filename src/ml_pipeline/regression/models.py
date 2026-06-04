@@ -1,5 +1,5 @@
 from sklearn.dummy import DummyRegressor
-from sklearn.linear_model import ElasticNet
+from sklearn.linear_model import Ridge, Lasso, ElasticNet
 from sklearn.neighbors import KNeighborsRegressor
 from sklearn.tree import DecisionTreeRegressor
 from sklearn.ensemble import RandomForestRegressor
@@ -10,6 +10,8 @@ from ml_pipeline.classification.dnn import DNNAdapter
 
 REGRESSION_MODELS = {
     "dummy": DummyRegressor,
+    "ridge": Ridge,
+    "lasso": Lasso,
     "linear": ElasticNet,
     "knn": KNeighborsRegressor,
     "decision_tree": DecisionTreeRegressor,

@@ -1,3 +1,7 @@
+"""
+Классы препроцессоров, специфические для регрессии house prices
+"""
+
 import pandas as pd
 import numpy as np
 
@@ -11,10 +15,8 @@ class LogTransformer:
 
     def __init__(self, columns) -> None:
         self.columns = columns
-        # self.mean_values = {col: 0 for col in cols}
 
-    def fit(self, df: pd.DataFrame):
-        # self.mean_values = {col: df[col].mean() for col in self.cols}
+    def fit(self, _: pd.DataFrame):
 
         return self
 

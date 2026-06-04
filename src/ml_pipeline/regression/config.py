@@ -201,29 +201,41 @@ regression_config = {
             # дефолтные гиперпараметры выбраны перебором
             # это гиперпараметры, которые показывают лучшие метрики
             "params": {
-                "alpha": 1.0,
+                "alpha": 9.0,
                 "l1_ratio": 0,
                 "max_iter": 500
+            },
+        },
+        "ridge": {
+            "preprocessing": "default",
+            "params": {
+                "alpha": 1.0,
+            },
+        },
+        "lasso": {
+            "preprocessing": "default",
+            "params": {
+                "alpha": 1.0,
             },
         },
         "knn": {
             "preprocessing": "default",
             "params": {
-                "n_neighbors": 7
+                "n_neighbors": 9
             },
         },
         "decision_tree": {
             "preprocessing": "default",
             "params": {
                 "random_state": "${general.seed}",
-                "min_samples_leaf": 4
+                "min_samples_leaf": 5
             },
         },
         "random_forest": {
             "preprocessing": "default",
             "params": {
-                "n_estimators": 700,
-                "max_depth": 3,
+                "n_estimators": 300,
+                "max_depth": 12,
                 "random_state": "${general.seed}"
             },
         },
